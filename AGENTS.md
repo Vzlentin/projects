@@ -1,0 +1,7 @@
+- The code moves here from harness (plan: `Val/Projects/Harness/projects-repo.md` in the vault). Until it arrives, `src/`, `test/` and `pi/*.ts` do not exist: `npm run check` has no build step and `vite.config.ts` has no `pack` block. Add both, as in harness, in the change that brings `src/`.
+- Toolchain: Vite+ (`vite-plus`, the `vp` command). Run `vp check --fix` before `npm run check`.
+- Lint: Oxlint with the anti-slop plugin, vendored in `tools/oxlint/anti-slop/` (see its `UPSTREAM.md`). Keep it equal to the copy in harness.
+- Two npm packages, released together with one version: `@vzlentin/projects` and `@vzlentin/pi-projects` (`pi/`), which depends on `@vzlentin/projects` at the exact same version.
+- `@vzlentin/harness` is a Git dependency pinned to a commit, as in workflows. Move the pin when this repository needs a newer harness.
+- Pin dependency versions exactly. The `@earendil-works/*` versions equal those of harness: change them together.
+- Never run `npm link` or `npm install` in `pi/`.

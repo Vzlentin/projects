@@ -1,0 +1,29 @@
+{
+	"name": "@vzlentin/pi-projects",
+	"version": "0.0.0",
+	"description": "The Pi package of projects: installed in Pi, it makes a harness host a project",
+	"keywords": [
+		"pi-package"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Vzlentin/projects.git"
+	},
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@vzlentin/projects": "0.0.0"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	},
+	"pi": {
+		"extensions": [],
+		"skills": []
+	}
+}

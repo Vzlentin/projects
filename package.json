@@ -1,0 +1,39 @@
+{
+	"name": "@vzlentin/projects",
+	"version": "0.0.0",
+	"description": "The project store of the harness stack: projects, work items, parleys and contracts",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Vzlentin/projects.git"
+	},
+	"type": "module",
+	"exports": {
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"check": "vp check --deny-warnings && tsc -p tsconfig.json && vp test",
+		"test": "vp test"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.6.0",
+		"@earendil-works/pi-ai": "1.6.0",
+		"@earendil-works/pi-codemode": "1.6.0",
+		"@earendil-works/pi-coding-agent": "1.6.0",
+		"@earendil-works/pi-durable": "1.6.0",
+		"@earendil-works/pi-mcp": "1.6.0",
+		"@earendil-works/pi-tui": "1.6.0",
+		"@vzlentin/harness": "git+https://github.com/Vzlentin/harness.git#bd0c948029c4a3d7852903c2748c2eb6f9820958",
+		"typebox": "1.3.27"
+	},
+	"devDependencies": {
+		"@types/node": "26.6.4",
+		"typescript": "7.0.2",
+		"vite-plus": "1.5.0"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}
