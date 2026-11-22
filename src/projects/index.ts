@@ -1,18 +1,21 @@
 /**
  * The projects entry: the work of a project behind the entry API of the host. It serves the persons, threads,
- * messages, rules, held actions, parleys, items, the gate, the digest and the watch of the project, the `ask` requests
- * with their parleys, the checks of the labels `parley:<slug>` and `item:<id>`, the digest before each input, the
- * contracts of the answered read-backs, and the items that the reports of their workers close, and drops the held
- * actions of each child that ended. At the open of the host, it opens the project store, which imports `store.json` at
- * the first start, moves an old store to items and labels, sends the pending deliveries, stops the workers of the work
- * that ended, and drops the held actions of the children that ended while the host was down.
+ * messages, rules, held actions, parleys, items, the gate, the digest, the memory of the host agent and the watch of
+ * the project, the `ask` requests with their parleys, the checks of the labels `parley:<slug>` and `item:<id>`, the
+ * digest before each input, the contracts of the answered read-backs, and the items that the reports of their workers
+ * close, and drops the held actions of each child that ended. At the open of the host, it opens the project store,
+ * which imports `store.json` at the first start, moves an old store to items and labels, sends the pending deliveries,
+ * stops the workers of the work that ended, and drops the held actions of the children that ended while the host was
+ * down.
  */
 import { copyJson, type JsonValue } from "@earendil-works/chord/json";
 import type { Entry, EntryLine, EntryOpen, EntryOptions, EntryRequest } from "@vzlentin/harness/entry-api";
+import { memoryDir } from "@vzlentin/harness/hosts";
 import { statePaths } from "@vzlentin/harness/protocol";
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import { projectToolsExtension } from "../project-tool.ts";
+import { MEMORY_EXTENSION } from "../protocol/project.ts";
 import { type ProjectRequest, ProjectRequestLine, type Replies } from "../protocol/requests.ts";
 import { digestHook } from "./digest.ts";
 import { dropHeldOfEnded, dropHeldOfEndedAgents } from "./ended-agents.ts";
@@ -20,6 +23,7 @@ import { gateExtension } from "./gate.ts";
 import { migrateTodos } from "./item-migration.ts";
 import { itemReports } from "./item-reports.ts";
 import { migrateLabels } from "./label-migration.ts";
+import { Compressor, type HostMemory, memoryExtension } from "./memory.ts";
 import { parleyReaction } from "./parleys.ts";
 import { sendDeliveries } from "./project-deliveries.ts";
 import { serveProjectWatch } from "./project-watch.ts";
@@ -48,6 +52,7 @@ const PROJECT_PASSIVE = {
 	item: listOrRead,
 	message: active,
 	digest: active,
+	memory: active,
 	gate: active,
 	held: active,
 } satisfies { readonly [T in ProjectRequest["type"]]: (request: EntryLine) => boolean };
@@ -57,13 +62,16 @@ type Opened = EntryOpen & Pick<ProjectsHost, "store">;
 
 /** The projects entry, with the handles of the host in `options`. */
 export default function projects(options: EntryOptions): Entry {
-	const { warn, scope } = options;
+	const { place, warn, settings, scope } = options;
+	// The compressions of the memory of the host agent, which run in the background.
+	const compressor = new Compressor({ settings, models: place.models, warn });
+	const memory: HostMemory = { compressor, dir: () => memoryDir(options.host, options.cwd) };
 	let opened: Opened | undefined;
 
 	const host = (): ProjectsHost => {
 		if (opened === undefined) throw new Error("The host is not open yet");
 
-		return { ...options, ...opened };
+		return { ...options, ...opened, memory };
 	};
 
 	const requests: EntryRequest[] = Object.entries(PROJECT_PASSIVE).map(([type, isPassive]) =>
@@ -85,9 +93,12 @@ export default function projects(options: EntryOptions): Entry {
 	return {
 		extensions: [
 			rulesExtension(() => host().store),
+			memoryExtension(memory, scope),
 			projectToolsExtension(options.durable, { Type }, scope),
 			gateExtension(scope.send),
 		],
+		// Only the host agent has the memory: no child inherits it, at any depth.
+		uninherited: [MEMORY_EXTENSION],
 		requests,
 		input: digestHook(host),
 		answeredAsk: (event, handlerOptions) => parleyReaction(host())(event, handlerOptions),
@@ -127,7 +138,9 @@ export default function projects(options: EntryOptions): Entry {
 			await stopEndedWork(host());
 			await dropHeldOfEndedAgents(host());
 		},
+		busy: () => compressor.running > 0,
 		close: async () => {
+			await compressor.close();
 			opened?.store.close();
 		},
 	};

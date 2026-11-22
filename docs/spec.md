@@ -8,12 +8,13 @@ This file gives the behaviour of the entry. The behaviour of the host, such as t
 
 The projects entry is the module `src/projects/index.ts` (`dist/projects/index.js` in a build). The package exports it as `@vzlentin/projects/entry`, and exports no other module. A host loads it only as an external entry, as any entry of the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host): from `$XDG_CONFIG_HOME/harness/entries.json`, where `setEntry(name, module)` of `@vzlentin/harness/entries` names the module of the entry, or from `piDurable.extensions` of the `package.json` of an installed Pi package. The Pi package `@vzlentin/pi-projects` (`pi/`) has no `piDurable` field, so a host loads the entry through `entries.json`. A host that runs already loads the entry only after it starts again.
 
-A host without the projects entry runs, with no gate, no rules section, no digest and no project tools. It answers a request of a type of this entry, such as `parley` or `item`, with `no loaded entry serves request type "<type>"` (see the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host)).
+A host without the projects entry runs, with no gate, no rules section, no digest, no memory of the host agent and no project tools. It answers a request of a type of this entry, such as `parley` or `item`, with `no loaded entry serves request type "<type>"` (see the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host)).
 
-The host calls the default export of the entry with the handles of the entry API (`EntryOptions` of `@vzlentin/harness/entry-api`). The entry reaches the state of the host only through these handles. It uses `options.host`, the name of the host, for the digest and for the path of `store.json`, and `options.stateDir`, the state directory of the host, for `project.sqlite`. The entry returns:
+The host calls the default export of the entry with the handles of the entry API (`EntryOptions` of `@vzlentin/harness/entry-api`). The entry reaches the state of the host only through these handles. It uses `options.host`, the name of the host, for the digest, for the path of `store.json` and for the memory folder, `options.cwd`, the directory of the host, for the memory folder, `options.stateDir`, the state directory of the host, for `project.sqlite`, and `options.settings` and `options.place.models` for the model of the compressions (see [Memory](#memory)). The entry returns:
 
-- `extensions`: three pi-durable extensions, in this order. `harness-rules` gives the section of the decided rules (see [Rules section](#rules-section)). `harness-project` gives the tools `thread`, `rule`, `parley` and `item` (see [Tools](#tools)). `harness-gate` gives the gate (see [Gate](#gate)).
-- `requests`: the request types `person`, `thread`, `message`, `digest`, `rule`, `gate`, `held`, `parley`, `item` and the watch `watch-project` (see [Requests](#requests)).
+- `extensions`: four pi-durable extensions, in this order. `harness-rules` gives the section of the decided rules (see [Rules section](#rules-section)). `harness-memory` (`MEMORY_EXTENSION`) gives the `memory` tool and the memory section (see [Memory](#memory)). `harness-project` gives the tools `thread`, `rule`, `parley` and `item` (see [Tools](#tools)). `harness-gate` gives the gate (see [Gate](#gate)).
+- `uninherited`: `["harness-memory"]`, so only the host agent has the memory. At any depth, `children.open` removes this extension from the `extensions` of the `AgentDoc` of each child (see `uninherited` in the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host)).
+- `requests`: the request types `person`, `thread`, `message`, `digest`, `memory`, `rule`, `gate`, `held`, `parley`, `item` and the watch `watch-project` (see [Requests](#requests)).
 - `input`: the input hook of the kind `digest` (see [Digest](#digest)).
 - `answeredAsk`: the handler of the answered asks, which makes the contracts of the parleys (see [Contracts](#contracts)).
 - `reported`: the handler of the reports, with the rule of the items (see [Reports](#reports)).
@@ -23,9 +24,10 @@ The host calls the default export of the entry with the handles of the entry API
 - `ask`: the handler of the `ask` requests, with their parleys (see [Parleys](#parleys)).
 - `classifyList`: the list of `classify-todos` without `list`: each work item, in every state, as a todo with its ID, its title as its text and its state. The open items are the open todos, and `earlier` has the items of every state (see `classify-todos` in the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host)).
 - `open`: the open steps below.
-- `close`: closes `project.sqlite`.
+- `busy`: true while a compression of the memory runs, so the host does not take its idle exit (see [Memory](#memory)).
+- `close`: stops the compressions of the memory and waits until they end, then closes `project.sqlite`.
 
-The entry gives no `busy`, no `catchUp`, no `tasks` and no `uninherited`.
+The entry gives no `catchUp` and no `tasks`.
 
 ### Open
 
@@ -60,6 +62,7 @@ The entry serves these request types on the socket of the host. The host checks 
 | `thread`        | `add`, `list`, `read`, `join`                                 | `list`, `read`            |
 | `message`       | `log`, `mark`, `edit`, `delete`                               | none                      |
 | `digest`        | none                                                          | no                        |
+| `memory`        | `note`, `recall`, `zoom`, `snapshot`                          | none                      |
 | `rule`          | `set`, `list`, `decide`, `retire`, `edit`, `create`, `delete` | `list`                    |
 | `gate`          | none                                                          | no                        |
 | `held`          | `approve`, `drop`                                             | none                      |
@@ -272,6 +275,28 @@ A `digest` request `{ caller, head? }` replies with `{ text }`, the digest of `c
 The items of a line are joined with `·`, and an empty list is `none`. `head` is the ID of the newest head of the context of the caller. The record keeps the `head` of every caller, and a new `head` gives the digest again, also when the text is the same, with the next count. The reply is `{}` when the text and the `head` are those of the last digest of the caller, and when the caller never got a digest, no message waits, the caller has no held action and no item is open.
 
 The input hook of the kind `digest` gives each hosted conversation its digest the same way, as a passive user entry of the kind `harness.digest` with `data` `{ waits, held, items }`, the IDs of the messages, of the held actions and of the items on the board. The host runs it before each input of a hosted conversation: an `input` to it (after the catch-up of the host agent), a `send` to a child, the first message of a spawned child, and each push of the host, such as the answers of a child, the answers of the user, and a delivery of an entry, such as the approve of a held action (see the input hooks in the [harness spec, Host](https://github.com/Vzlentin/harness/blob/5a676bad8d6076b5bdacc341bbafaf573d2f6187/docs/spec.md#host)). `head` is the ID of the newest head marker of the conversation (a `pi.compaction` or a `pi.reset`): a newer head marker means that its context lost the last digest. The entry has the request ID `input:digest:<count>:<hash>`, the count of digests of the caller and a hash of the text, and goes before the record, so a repeat after a crash adds nothing. A failure is the warning `digest: <message>` in `host.log` and the degraded state `digest-failed`, and the input goes through. The digest is not a part of the catch-up: a catch-up comes only before an input to the host agent, and its hooks do not know the agent.
+
+## Memory
+
+The host agent has a memory, an OptMem store. Its folder is the `.optmem` folder in the directory of the host when it exists, as `memoryDir(host, cwd)` of `@vzlentin/harness/hosts` gives it. Otherwise, and always for `main`, it is OptMem's default folder, `~/.optmem/memory`. The entry runs `~/.optmem/memo` with `MEMORY_DIR` set to that folder, or with no `MEMORY_DIR`. A missing `memo` gives the error `~/.optmem/memo is missing: install OptMem`. An error of `memo` is its error output, else its output.
+
+The memory is only for the host agent. No child gets the `memory` tool or the memory section, at any depth (see `uninherited` in [Entry](#entry)).
+
+### Memory section
+
+The system prompt of the host agent has the section `memory` (`MEMORY_SECTION`): the line `# Memory, oldest first`, then each memory line of every part of `memo wake`, with no status line and no compression prompt. The entry takes this snapshot at the first model request of each conversation after the host starts, and keeps it until the host exits, so the section does not change during the life of the host. When `wake` prints `Cannot wake`, the entry first does the compressions, then runs `wake` one more time. An empty memory gives no section. A snapshot that fails, such as with no `memo`, gives no section and the warning `The memory section failed: <message>`.
+
+### memory tool
+
+The `memory` tool has one `action`. `note` saves `text`, trimmed, with `memo note`, and gives its line `Saved as #<N>.`, never the rest of the output. A note that `memo` refuses, such as a text over its limit of 280 bytes, fails with the error of `memo`. `recall` gives the output of `memo recall <pattern>`, and `zoom` the output of `memo zoom <block>`. A call goes to the host in its own process, as a `memory` request. The gate lets each `memory` call run.
+
+A `memory` request `{ action, ... }` uses the memory of the host agent. `note { text }`, `recall { pattern }` and `zoom { block }` are the calls of the `memory` tool: they run `memo` as the tool does, and reply `{ text }` with the result of the call. An error of the call fails the request with its message. `snapshot` replies `{ text }` with the text of the memory section, which the entry takes with `memo wake` at each request and does not keep, or with an empty `text` for an empty memory. A `snapshot` that gets `Cannot wake` first waits for the compressions. Each action has its own fields: a line without them fails with `Invalid memory request: <field>: required`. A `memory` request counts as activity for the idle exit.
+
+### Compressions
+
+The entry does the compressions of the memory in the background, so the agent never sees a compression prompt. A `note` whose output has a compression prompt (`Compress memories #<a>-<b> into one line of at most <N> bytes.`), and a `Cannot wake`, start a loop: `memo nap`, then for each prompt one model call and `memo nap <a>-<b> "<line>"`, until no prompt is left. The model gets the prompt without its `Run:` line and its count of the compressions left, with the thinking level `low`. The line is the first line of its answer that is not empty, trimmed, and cut to `<N>` bytes at the end of a word, else at the end of a character.
+
+The model is the setting `memoryModel` of Pi's settings, read again at each compression, else `subagentModel`, else Pi's default model, as `settingModel` of `@vzlentin/harness/model-choice` finds it; its errors name `a compression`. One loop runs for each memory folder at a time: a note while it runs makes it run one more pass. A failure ends the loop with the warning `A compression of the memory failed: <message>`. While a loop runs, `busy` of the entry is true. A closing host stops the loop with no warning, and waits for its end.
 
 ## Watch
 

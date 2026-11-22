@@ -10,6 +10,7 @@ import { nextDigest, recordDigest } from "./digest.ts";
 import { gateCall } from "./gate.ts";
 import { stageItem, stageItems } from "./item-stage.ts";
 import { addItem, linkItem, readItemBothWays, readItemWorkers, setItem, unlinkItem } from "./items.ts";
+import { answerMemory, type HostMemory } from "./memory.ts";
 import {
 	dropAskRef,
 	endParley,
@@ -58,6 +59,8 @@ export type ProjectsHost = Pick<
 	| "deliver"
 > &
 	EntryOpen & {
+		/** The memory of the host agent, for the `memory` requests. */
+		readonly memory: HostMemory;
 		/**
 		 * The persons, the threads, the messages, the rules, the held actions, the parleys, the items with their edges and
 		 * the pending deliveries.
@@ -88,6 +91,8 @@ export async function handleProject(
 			return message(request, host);
 		case "digest":
 			return digest(request.caller, request.head, host);
+		case "memory":
+			return answerMemory(request, host.memory, signal);
 		case "rule":
 			return rule(request, host);
 		case "gate":

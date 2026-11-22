@@ -24,6 +24,15 @@ import { type Static, Type } from "typebox";
  */
 export const PROJECT_EXTENSION = "harness-project";
 
+/**
+ * The name of the durable extension with the `memory` tool and the memory section of the system prompt. Only the host
+ * agent gets it: the entry lists it in `uninherited`, so `children.open` removes it from each child.
+ */
+export const MEMORY_EXTENSION = "harness-memory";
+
+/** The key of the system prompt section with the memory of the host agent. */
+export const MEMORY_SECTION = "memory";
+
 /** Who said or wrote something: the ID of a person, or `user`. */
 export const Author = Type.Union([LocalId, Type.Literal("user")]);
 
@@ -329,6 +338,11 @@ export const DIGEST_KIND = "harness.digest";
 export const DigestReply = Type.Object({ text: Type.Optional(Type.String()) });
 
 export type DigestReply = Static<typeof DigestReply>;
+
+/** The reply to a `memory` request. */
+export const MemoryReply = Type.Object({ text: Type.String() });
+
+export type MemoryReply = Static<typeof MemoryReply>;
 
 export const PersonList = Type.Object({ persons: Type.Array(Person) });
 

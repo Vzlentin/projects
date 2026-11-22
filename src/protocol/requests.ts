@@ -9,6 +9,7 @@ import type { ProjectState } from "./project-watch.ts";
 import {
 	type DigestReply,
 	type HeldAction,
+	type MemoryReply,
 	type Message,
 	MessageDelete,
 	MessageEdit,
@@ -34,7 +35,7 @@ import {
 } from "./project.ts";
 
 /**
- * One request line of a type that the projects entry serves: the persons, threads, messages, digests, rules,
+ * One request line of a type that the projects entry serves: the persons, threads, messages, digests, memory, rules,
  * parleys, items, gate, held actions and the watch of the project. The entry checks it with the branches of its type.
  */
 export const ProjectRequestLine = Type.Union([
@@ -91,6 +92,17 @@ export const ProjectRequestLine = Type.Union([
 	 * given. A Pi session sends it before each turn, with the ID of its newest compaction entry as `head`.
 	 */
 	Type.Object({ type: Type.Literal("digest"), caller: Type.String(), head: Type.Optional(Type.String()) }),
+	/** Saves `text` as a memory of the host agent, and replies with the `Saved as #<N>.` line of OptMem. */
+	Type.Object({ type: Type.Literal("memory"), action: Type.Literal("note"), text: Type.String() }),
+	/** Replies with the memories of the host agent that match the regex `pattern`. */
+	Type.Object({ type: Type.Literal("memory"), action: Type.Literal("recall"), pattern: Type.String() }),
+	/** Replies with the two halves of the node `block` of the memory of the host agent. */
+	Type.Object({ type: Type.Literal("memory"), action: Type.Literal("zoom"), block: Type.String() }),
+	/**
+	 * Replies with the memory of the host agent as the text of the memory section, or with an empty text for an empty
+	 * memory. A Pi session sends it at its first turn.
+	 */
+	Type.Object({ type: Type.Literal("memory"), action: Type.Literal("snapshot") }),
 	/** Adds an open rule, which can name the rule `replaces`, and replies with it. */
 	Type.Object({
 		type: Type.Literal("rule"),
@@ -216,6 +228,8 @@ export type Replies = {
 	readonly thread: Thread | ThreadList | ThreadMessages;
 	readonly message: Message;
 	readonly digest: DigestReply;
+	/** The output of OptMem, or the memory section of `snapshot`, with an empty text for an empty memory. */
+	readonly memory: MemoryReply;
 	/** The rule of `set`, `decide`, `retire`, `delete`, `edit` and `create`, or the rules of `list`. */
 	readonly rule: Rule | RuleList;
 	readonly gate: GateReply;

@@ -366,6 +366,10 @@ export function called(prompt: string): number {
 /** The keys of Pi's global settings that the tests set. */
 export type TestSettings = {
 	readonly agentDepthLimit?: number;
+	readonly subagentModel?: string;
+	readonly memoryModel?: string;
+	readonly defaultProvider?: string;
+	readonly defaultModel?: string;
 };
 
 /** Writes Pi's global settings of the tests: no retry, and `settings`. */
@@ -374,17 +378,20 @@ export async function setSettings(settings: TestSettings = {}): Promise<void> {
 }
 
 /**
- * A watch of `target` in the running host, on a connection of its own: the reply, the lines that came so far, and the
- * end of the lines.
+ * A watch of `target` in the running host `host`, the main host by default, on a connection of its own: the reply, the
+ * lines that came so far, and the end of the lines.
  */
-export async function openWatch(target: Target): Promise<{
+export async function openWatch(
+	target: Target,
+	host?: string,
+): Promise<{
 	client: Client;
 	view: ConversationView;
 	child: ChildInfo;
 	lines: WatchLine[];
 	ended: Promise<void>;
 }> {
-	const client = await connect({ start: false });
+	const client = await connect({ start: false, host });
 
 	if (client === undefined) throw new Error("no host");
 	const watched = await client.watch(target);
@@ -416,9 +423,9 @@ export async function untilIdleAfterBusy(events: readonly WatchLine[]): Promise<
 	await until(() => busy() !== -1 && events.slice(busy() + 1).some((line) => line.child.state === "idle"));
 }
 
-/** Sends `message` to the host agent, and waits until its turn ends. */
-export async function agentTurn(message: string): Promise<void> {
-	const { client, lines } = await openWatch({ kind: "agent" });
+/** Sends `message` to the host agent of the host `host`, the main host by default, and waits until its turn ends. */
+export async function agentTurn(message: string, host?: string): Promise<void> {
+	const { client, lines } = await openWatch({ kind: "agent" }, host);
 
 	try {
 		await inputAgent(client, message);
@@ -681,7 +688,12 @@ export async function setUp(): Promise<void> {
 
 	const faux = fauxProvider({
 		provider: "faux",
-		models: [{ id: "faux-1", reasoning: true }],
+		models: [
+			{ id: "faux-1", reasoning: true },
+			{ id: "faux-2", reasoning: true },
+			// A context window wider than the one of faux-1, so Pi's default model can be another model.
+			{ id: "faux-wide", reasoning: true, contextWindow: 4_000_000 },
+		],
 	});
 
 	faux.setResponses(Array.from({ length: 500 }, () => respond));
