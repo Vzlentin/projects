@@ -198,7 +198,7 @@ describe("the import of store.json", { timeout: 60_000 }, () => {
 
 		const refused = startHost(project);
 		await expect(refused).rejects.toThrow(dir);
-		await expect(refused).rejects.toThrow("harness store load");
+		await expect(refused).rejects.toThrow("projects store load");
 		expect(existsSync(projectStore(project))).toBe(false);
 	});
 

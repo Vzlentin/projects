@@ -1,5 +1,5 @@
 /**
- * The store file, such as `store.json`: the lists of the store of a project, which `harness store load` and the first
+ * The store file, such as `store.json`: the lists of the store of a project, which `projects store load` and the first
  * start of a host import. A file of version 1 has no items: its parse moves its open todos to items.
  */
 import { readFileSync } from "node:fs";
@@ -61,7 +61,7 @@ export const StoreFile = Type.Object({
 
 export type StoreFile = Static<typeof StoreFile>;
 
-/** The count of each list of a store file, in the order of the lines of `harness store load`. */
+/** The count of each list of a store file that `project.sqlite` keeps, in the order of the lines of `projects store load`. */
 export type StoreCounts = {
 	persons: number;
 	threads: number;
@@ -69,12 +69,8 @@ export type StoreCounts = {
 	rules: number;
 	held: number;
 	parleys: number;
-	asks: number;
 	/** The messages out, each with its state in the outbox. */
 	outbox: number;
-	todos: number;
-	/** The todos of all the callers. */
-	callerTodos: number;
 	items: number;
 };
 
@@ -98,7 +94,7 @@ export function parseStoreFile(path: string): StoreFile {
 
 	if (Value.Check(Versioned, value) && value.version !== 1 && value.version !== STORE_FILE_VERSION) {
 		throw new Error(
-			`${path} has the version ${JSON.stringify(value.version)}: harness store load reads only the versions 1 and ${STORE_FILE_VERSION}`,
+			`${path} has the version ${JSON.stringify(value.version)}: projects store load reads only the versions 1 and ${STORE_FILE_VERSION}`,
 		);
 	}
 
@@ -274,7 +270,7 @@ function unknownAsk(file: StoreFile): string | undefined {
 	return undefined;
 }
 
-/** The count of each list of `file`. */
+/** The count of each list of `file` that `project.sqlite` keeps. */
 export function storeCounts(file: StoreFile): StoreCounts {
 	return {
 		persons: file.persons.length,
@@ -283,13 +279,10 @@ export function storeCounts(file: StoreFile): StoreCounts {
 		rules: file.rules.length,
 		held: file.held.length,
 		parleys: file.parleys.length,
-		asks: file.asks.length,
 		outbox: file.threads.reduce(
 			(sum, thread) => sum + thread.messages.filter((message) => message.direction === "out").length,
 			0,
 		),
-		todos: file.todos.length,
-		callerTodos: file.callerTodos.reduce((sum, list) => sum + list.todos.length, 0),
 		items: file.items.length,
 	};
 }

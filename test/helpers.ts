@@ -57,11 +57,10 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { expect, vi } from "vite-plus/test";
 import { PROJECT_STORE_FILE, ProjectStore } from "../src/projects/project-store.ts";
-import { readStoreFile } from "../src/projects/store-file.ts";
 import { ItemList } from "../src/protocol/item.ts";
 import { ProjectEvent, ProjectState } from "../src/protocol/project-watch.ts";
 import type { ProjectRequest, Replies as ProjectReplies } from "../src/protocol/requests.ts";
-import type { StoreFile } from "../src/protocol/store-file.ts";
+import { STORE_FILE_VERSION, type StoreFile } from "../src/protocol/store-file.ts";
 import { fixtureHandles } from "./fixtures/projects.ts";
 
 /** The CLI of the installed harness, which the tests run for `create`, `spawn` and `wait`. */
@@ -309,7 +308,20 @@ export async function readStores(host: string): Promise<StoreFile> {
 	const { asks, todos } = fixtureHandles();
 
 	try {
-		return await readStoreFile(harness, storage, ROOT_CONVERSATION_ID, { store, asks, todos });
+		return {
+			version: STORE_FILE_VERSION,
+			persons: store?.persons() ?? [],
+			threads: store?.threads().map((thread) => ({ ...thread, messages: store.messages(thread.id) })) ?? [],
+			rules: store?.rules({}) ?? [],
+			lastRule: store?.lastRule() ?? 0,
+			held: store?.held() ?? [],
+			parleys: store?.parleys() ?? [],
+			asks: (await asks.read(harness, BACKGROUND_CONTEXT)).asks,
+			todos: (await todos.read(harness, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT)).todos,
+			callerTodos: await todos.callers(harness, storage, BACKGROUND_CONTEXT),
+			items: store?.items() ?? [],
+			lastItem: store?.lastItem() ?? 0,
+		};
 	} finally {
 		store?.close();
 		await harness.close(BACKGROUND_CONTEXT);

@@ -310,13 +310,16 @@ async function itemCommand(args: string[], host: string | undefined): Promise<vo
 	process.stdout.write(text);
 }
 
-/** Loads a store file into the empty store of the host while no host runs, and prints the count of each list. */
+/**
+ * Loads the project lists of a store file into the empty project store of the host while no host runs, and prints the
+ * count of each list. A file with asks or todos fails.
+ */
 async function storeCommand(args: string[], host: string | undefined): Promise<void> {
 	const [action, file, ...rest] = args;
 
 	if (action !== "load" || file === undefined || rest.length !== 0) usage();
 	const name = hostOf(host, process.env, process.cwd());
-	// Only `store load` opens the stores, so the other commands do not load pi-durable.
+	// Only `store load` opens the project store, so the other commands do not load it.
 	const { loadStore } = await import("./projects/store-load.ts");
 	const counts = await loadStore(name, file);
 
@@ -349,7 +352,10 @@ const COMMANDS: ReadonlyMap<string, Command> = new Map(
 			],
 			run: itemCommand,
 		},
-		store: { usage: ["  projects store load <file>"], run: storeCommand },
+		store: {
+			usage: ["  projects store load <file>   loads the project lists; refuses a file with asks or todos"],
+			run: storeCommand,
+		},
 	} satisfies Record<string, Command>),
 );
 

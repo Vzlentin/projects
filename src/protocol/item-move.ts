@@ -1,6 +1,6 @@
 /**
  * The move of the open todos of the list of the project to work items: the first start of a host makes it in its store,
- * and `harness store load` makes it for a store file of version 1.
+ * and `projects store load` makes it for a store file of version 1.
  */
 import { isFinished, type Todo } from "@vzlentin/harness/protocol";
 import type { WorkItem } from "./item.ts";
@@ -24,8 +24,18 @@ export function moveTodos(todos: readonly Todo[], at: number): MovedTodos {
 		if (todo.ask !== undefined || isFinished(todo.state)) return { ...todo };
 		items.push({ id: todo.id, title: todo.text, state: "open", edges: [], at, by: MIGRATION_CALLER });
 
-		return { ...todo, state: "dropped", text: `moved to item ${todo.id}: ${todo.text}` };
+		return { ...todo, state: "dropped", text: `${movedPrefix(todo.id)}${todo.text}` };
 	});
 
 	return { todos: moved, items, last: Math.max(0, ...todos.map((todo) => todo.id)) };
+}
+
+/** Whether `todo` is a todo that the move made `dropped` when it made its item. */
+export function isMovedTodo(todo: Todo): boolean {
+	return todo.state === "dropped" && todo.text.startsWith(movedPrefix(todo.id));
+}
+
+/** The start of the text of the todo `id` after the move. */
+function movedPrefix(id: number): string {
+	return `moved to item ${id}: `;
 }

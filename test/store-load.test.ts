@@ -132,17 +132,11 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		}
 
 		const hosted = await readStores("load-source");
-		const ask = hosted.asks[0]?.id;
-
-		if (ask === undefined) throw new Error("no ask");
-		// Each todo names an ask of the file, as the todo `Save to the vault` does, and the load keeps the link.
-		const linked = (todos: StoreFile["todos"]) => todos.map((todo) => ({ ...todo, ask }));
-
-		const source: StoreFile = {
-			...hosted,
-			todos: linked(hosted.todos),
-			callerTodos: hosted.callerTodos.map((list) => ({ ...list, todos: linked(list.todos) })),
-		};
+		expect(hosted.asks).toHaveLength(2);
+		expect(hosted.todos).toHaveLength(1);
+		expect(hosted.callerTodos.map((list) => list.todos.length)).toEqual([1]);
+		// The asks and the todos belong to the harness host, so the loaded file has only the project lists.
+		const source: StoreFile = { ...hosted, asks: [], todos: [], callerTodos: [] };
 
 		expect(source.lastRule).toBeGreaterThan(source.rules.at(-1)?.id ?? 0);
 		expect(source.rules.map((rule) => rule.thread)).toEqual([source.threads[0]?.id]);
@@ -156,11 +150,10 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		const loaded = await hostedFile("load-target");
 		expect(loaded).toEqual(source);
 
-		// Into a store that never had a host, so the load creates its root conversation.
+		// Into a store that never had a host.
 		expect(await load("load-new", path)).toEqual({
 			code: 0,
-			stdout:
-				"persons: 2\nthreads: 2\nmessages: 5\nrules: 1\nheld: 1\nparleys: 1\nasks: 2\noutbox: 4\ntodos: 1\ncallerTodos: 1\nitems: 0\n",
+			stdout: "persons: 2\nthreads: 2\nmessages: 5\nrules: 1\nheld: 1\nparleys: 1\noutbox: 4\nitems: 0\n",
 			stderr: "",
 		});
 
@@ -302,71 +295,88 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		expect(await hostedFile("edit-target")).toEqual(source);
 	});
 
-	it("keeps the link of a loaded todo to its ask, so the note of the ask closes it", async () => {
-		await createHost("link-source");
-		await createHost("link-target");
-		const source = await startHost("link-source");
+	it("refuses a file with asks or todos before it writes", async () => {
+		await createHost("asks-source");
+		await createHost("asks-target");
+		const host = await startHost("asks-source");
 
 		try {
-			const asks = [{ title: "Where", kind: "your call" as const, options: OPTIONS, plan: "a" }];
-			await send({ type: "ask", action: "round", caller: "1", asks }, "link-source");
+			await fill("asks-source");
 		} finally {
-			await source.close();
+			await host.close();
 		}
 
-		const hosted = await readStores("link-source");
-		const ask = hosted.asks[0]?.id;
+		const hosted = await readStores("asks-source");
+		const { dir } = statePaths("asks-target");
+		const empty = Value.Create(StoreFile);
+		const todo = { id: 1, text: "Plan", state: "open" } as const;
 
-		if (ask === undefined) throw new Error("no ask");
-		const todo = { id: 1, text: "Save to the vault: Where", state: "open" as const, ask };
-		const path = join(root, "link-source.json");
-		await writeFile(path, JSON.stringify({ ...hosted, todos: [todo] }));
-		expect(await load("link-target", path)).toMatchObject({ code: 0, stderr: "" });
+		const files = [
+			["asks.json", { ...hosted, todos: [], callerTodos: [] }],
+			["todos.json", { ...empty, todos: [todo] }],
+			["caller-todos.json", { ...empty, callerTodos: [{ caller: "session-a", todos: [todo] }] }],
+			["all.json", hosted],
+		] as const;
 
-		const target = await startHost("link-target");
+		for (const [name, file] of files) {
+			const path = join(root, name);
+			await writeFile(path, JSON.stringify(file));
 
-		try {
-			await send({ type: "ask", action: "note", caller: "1", id: ask, note: "where" }, "link-target");
-			expect(await send({ type: "todo", action: "list", caller: "1" }, "link-target")).toEqual({
-				todos: [{ ...todo, state: "done" }],
+			expect(await load("asks-target", path)).toEqual({
+				code: 1,
+				stdout: "",
+				stderr: `${path} has asks or todos: they belong to the harness host, and projects store load does not load them\n`,
 			});
-		} finally {
-			await target.close();
+
+			expect(existsSync(join(dir, "project.sqlite"))).toBe(false);
+			expect(existsSync(join(dir, "durable.sqlite"))).toBe(false);
 		}
+
+		// A caller with an empty list of todos loads.
+		const path = join(root, "empty-caller.json");
+		await writeFile(path, JSON.stringify({ ...empty, callerTodos: [{ caller: "session-a", todos: [] }] }));
+		expect(await load("asks-target", path)).toMatchObject({ code: 0, stderr: "" });
+		expect(await hostedFile("asks-target")).toMatchObject({ asks: [], todos: [], callerTodos: [] });
 	});
 
-	it("loads a file of version 1 with its open todos moved to items, and a file of version 2 with its items", async () => {
+	it("loads a file of version 1 with its open todos moved to items, refuses one with a finished todo, and loads a file of version 2 with its items", async () => {
 		await createHost("load-v1");
 		await createHost("load-v2");
 		const { version: _version, items: _items, lastItem: _lastItem, ...lists } = Value.Create(StoreFile);
 
 		const todos = [
 			{ id: 1, text: "Plan", state: "open" },
-			{ id: 2, text: "Old", state: "done" },
 			{ id: 3, text: "Ship", state: "doing" },
 		] as const;
 
+		// The todos that the move makes `dropped` are in their items, so they do not refuse the file.
 		const v1 = join(root, "load-v1.json");
 		await writeFile(v1, JSON.stringify({ ...lists, version: 1, todos }));
 		const loaded = await load("load-v1", v1);
 		expect(loaded).toMatchObject({ code: 0, stderr: "" });
-		expect(loaded.stdout).toContain("todos: 3\ncallerTodos: 0\nitems: 2\n");
+		expect(loaded.stdout).toContain("items: 2\n");
 		const moved = await hostedFile("load-v1");
 		const migrated = { state: "open", edges: [], at: expect.any(Number), by: "migration" };
 
 		expect(moved).toMatchObject({
 			version: 2,
-			todos: [
-				{ id: 1, text: "moved to item 1: Plan", state: "dropped" },
-				{ id: 2, text: "Old", state: "done" },
-				{ id: 3, text: "moved to item 3: Ship", state: "dropped" },
-			],
+			todos: [],
 			items: [
 				{ id: 1, title: "Plan", ...migrated },
 				{ id: 3, title: "Ship", ...migrated },
 			],
 			lastItem: 3,
 		});
+
+		// A finished todo stays a todo after the move, so the file is refused.
+		await createHost("load-v1-done");
+		const done = join(root, "load-v1-done.json");
+		await writeFile(
+			done,
+			JSON.stringify({ ...lists, version: 1, todos: [...todos, { id: 2, text: "Old", state: "done" }] }),
+		);
+		expect(await load("load-v1-done", done)).toMatchObject({ code: 1, stdout: "" });
+		expect(existsSync(join(statePaths("load-v1-done").dir, "project.sqlite"))).toBe(false);
 
 		// A file of version 2: its open todo stays a todo, and the counter takes the highest ID of the items.
 		const edge = { from: "agent:7", kind: "serves", to: "item:2", at: 5, by: "cli" } as const;
@@ -377,11 +387,10 @@ describe("projects store load", { timeout: 60_000 }, () => {
 			{ id: 3, title: "Three", state: "open", edges: [needs], at: 6, by: "cli" },
 		] as const;
 
-		const kept = [{ id: 1, text: "Private", state: "open" }] as const;
 		const v2 = join(root, "load-v2.json");
-		await writeFile(v2, JSON.stringify({ ...lists, version: 2, todos: kept, items, lastItem: 1 }));
+		await writeFile(v2, JSON.stringify({ ...lists, version: 2, items, lastItem: 1 }));
 		expect(await load("load-v2", v2)).toMatchObject({ code: 0, stderr: "" });
-		expect(await hostedFile("load-v2")).toMatchObject({ todos: kept, items, lastItem: 3 });
+		expect(await hostedFile("load-v2")).toMatchObject({ items, lastItem: 3 });
 
 		const host = await startHost("load-v2");
 
@@ -390,9 +399,6 @@ describe("projects store load", { timeout: 60_000 }, () => {
 				id: 4,
 			});
 			expect(await send({ type: "item", action: "read", id: 2 }, "load-v2")).toMatchObject({ edges: [edge, needs] });
-			expect(await send({ type: "todo", action: "list", caller: "cli", handle: AGENT_HANDLE }, "load-v2")).toEqual({
-				todos: kept,
-			});
 		} finally {
 			await host.close();
 		}
@@ -413,7 +419,7 @@ describe("projects store load", { timeout: 60_000 }, () => {
 			[
 				"version.json",
 				JSON.stringify({ ...base, version: 3 }),
-				"has the version 3: harness store load reads only the versions 1 and 2",
+				"has the version 3: projects store load reads only the versions 1 and 2",
 			],
 			["schema.json", JSON.stringify({ ...base, persons: [{ id: 1 }] }), "is not a store file: /persons/0"],
 			[

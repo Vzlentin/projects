@@ -48,10 +48,12 @@ export async function openProjectStore(host: ProjectStoreHost): Promise<ProjectS
 
 	if (!existsSync(join(dir, PROJECT_STORE_FILE))) {
 		if (existsSync(file)) {
-			await importStoreFile(dir, parseStoreFile(file), async () => (await asks.read(harness, context)).asks);
+			const parsed = parseStoreFile(file);
+			checkAsks(parsed, (await asks.read(harness, context)).asks);
+			await importStoreFile(dir, parsed);
 		} else if (await hasOldLists(storage)) {
 			throw new Error(
-				`${dir} has the lists of the project in durable.sqlite but no store.json: write a store file with an older harness, then run harness store load`,
+				`${dir} has the lists of the project in durable.sqlite but no store.json: write a store file with an older harness, then run projects store load`,
 			);
 		}
 	}
@@ -61,18 +63,12 @@ export async function openProjectStore(host: ProjectStoreHost): Promise<ProjectS
 }
 
 /**
- * Writes `file` into `store` in one transaction, with the IDs of the file. `durable` runs inside the transaction, and
- * gives the asks of `durable.sqlite`: each ask of the file whose parley is in the file must be there, with the same ID
- * and parley. A failure rolls `store` back. The write tells no listener.
+ * Writes `file` into `store` in one transaction, with the IDs of the file. A failure rolls `store` back. The write
+ * tells no listener.
  */
-export async function loadStoreFile(
-	store: ProjectStore,
-	file: StoreFile,
-	durable: () => Promise<readonly Ask[]>,
-): Promise<void> {
+export async function loadStoreFile(store: ProjectStore, file: StoreFile): Promise<void> {
 	await store.transaction(async (tx) => {
 		writeLists(tx, file);
-		checkAsks(file, await durable());
 	});
 }
 
@@ -80,18 +76,14 @@ export async function loadStoreFile(
  * Writes `file` into a new `project.sqlite` in `dir`, which has none, with `loadStoreFile`. The file becomes
  * `project.sqlite` only after the commit. A failure leaves no `project.sqlite`.
  */
-export async function importStoreFile(
-	dir: string,
-	file: StoreFile,
-	durable: () => Promise<readonly Ask[]>,
-): Promise<void> {
+export async function importStoreFile(dir: string, file: StoreFile): Promise<void> {
 	removeDatabase(join(dir, IMPORT_FILE));
 
 	try {
 		const store = ProjectStore.open(dir, 0, IMPORT_FILE);
 
 		try {
-			await loadStoreFile(store, file, durable);
+			await loadStoreFile(store, file);
 		} finally {
 			store.close();
 		}
