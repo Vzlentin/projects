@@ -67,6 +67,9 @@ import { fixtureHandles } from "./fixtures/projects.ts";
 /** The CLI of the installed harness, which the tests run for `create`, `spawn` and `wait`. */
 export const CLI = fileURLToPath(new URL("dist/cli.js", import.meta.resolve("@vzlentin/harness/package.json")));
 
+/** The CLI of this checkout, which Node runs from source with type stripping, so a test needs no fresh build. */
+export const PROJECTS_CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
+
 export let root: string;
 
 /** One model request: what the faux provider saw. */
@@ -232,8 +235,18 @@ export type Result = { readonly code: number; readonly stdout: string; readonly 
 
 /** Runs the CLI of the installed harness with `args` as a real process, in `cwd`, with `env` over the test environment. */
 export function cli(args: readonly string[], env: NodeJS.ProcessEnv = {}, cwd = root): Promise<Result> {
+	return run(CLI, args, env, cwd);
+}
+
+/** Runs the `projects` CLI of this checkout with `args` as a real process, in `cwd`, with `env` over the test environment. */
+export function projects(args: readonly string[], env: NodeJS.ProcessEnv = {}, cwd = root): Promise<Result> {
+	return run(PROJECTS_CLI, args, env, cwd);
+}
+
+/** Runs the script `script` with `args` as a real Node process, in `cwd`, with `env` over the test environment. */
+function run(script: string, args: readonly string[], env: NodeJS.ProcessEnv, cwd: string): Promise<Result> {
 	return new Promise((resolve) => {
-		execFile(process.execPath, [CLI, ...args], { cwd, env: { ...process.env, ...env } }, (error, stdout, stderr) => {
+		execFile(process.execPath, [script, ...args], { cwd, env: { ...process.env, ...env } }, (error, stdout, stderr) => {
 			// `code` is the exit code, or a string such as `ENOENT` when the process did not start.
 			const code = error === null ? 0 : Number.isInteger(error.code) ? Number(error.code) : 1;
 			resolve({ code, stdout, stderr });

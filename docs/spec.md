@@ -343,3 +343,46 @@ The text result has one line for each object.
 ### Structured results
 
 The structured result is `{ action, value }`, where `value` is the reply of the request: the message for `log`, `draft` and `mark`, the rule for `rule set`, `{ thread, messages }` for `thread read`, and `{ threads }` or `{ rules }` for `list`. For `parley`, `value` is the write `{ parleys, asks }` for `round`, `answer` and `drop`, the ask for `note` and for `read` with `ask`, `{ parley, asks }` for `take` and `read`, the parley for `end`, and `{ parleys, asks }` with the open asks with no parley for `list`. For `item`, `value` is the item with its stage for `add`, `set` and `read`, `{ items }` for `list`, and the edge for `link`. Each tool declares the schema of this result, with the schemas `ThreadList`, `ThreadMessages`, `Message`, `RuleList`, `Rule` and `ParleyList` of `src/protocol/project.ts`, `Ask`, `Parley`, `ParleyAsks`, `AskList` and `AskWrite` of `@vzlentin/harness/protocol`, and `StagedItem`, `ItemList` and `Edge` of `src/protocol/item.ts`.
+
+## CLI
+
+The package has the command `projects` (`bin` of `package.json`, `src/cli.ts`, `dist/cli.js` in a build). It has these commands:
+
+```
+projects parley show <slug> [--json]
+projects parley note [<slug>] <ask> <note>
+projects rule [list [--kind <kind>] [--status <status>]]
+projects rule (decide | retire | delete) <id>
+projects rule edit <id> [--name <name>] [--kind <kind>] [--value <text>]
+projects rule create --name <name> --kind <kind> --value <text>
+projects item [list [--state <state>]]
+projects item add <title> [--text <text>]
+projects item set <id> [<state>] [--title <title>] [--text <text>]
+projects item show <id>
+projects item link <from> <kind> <to>
+projects store load <file>
+```
+
+Each command prints its result on stdout. An error prints one line on stderr, and the exit code is 1. Any other word, a missing argument, or an option that the action does not take prints the usage on stderr, with the exit code 1: `Usage:`, the lines above, each after two spaces, and `Any command takes --host <name> before it; without it, the host is HARNESS_HOST, then the cwd.`
+
+### Host of a command
+
+The host of a command is `--host <name>` when it is the first argument, else `HARNESS_HOST`, else the registered host whose directory holds the cwd, else `main`, as for the `harness` CLI. A `--host` after the command is an argument of that command. An unknown host fails with `Unknown harness host: <name>`. A first argument `--project` fails with `projects takes --host <name>, not --project`.
+
+A command other than `store load` sends its requests through the socket of the host, and starts the host when none runs: a request of a core type of the host, such as `person list` or `todo list`, as a request of the host, and a request of the projects entry as a request of an entry. The caller is `PI_SESSION_ID`, else `cli`. A host that does not load the projects entry answers with `no loaded entry serves request type "<type>"`.
+
+### parley, rule and item
+
+- `parley show <slug>` sends `parley read` and prints the parley as Markdown: its title, with ` (<status>)` when it is done or dropped, its goal, each ask with its answer and the words of the user, or `Open, plan <key>: <label>` for an open ask, without the read-back, then its design sense and its evidence. With `--json`, it prints the reply as one JSON line. `parleyShowText` of `src/protocol/project.ts` gives the Markdown. An unknown slug fails with `Unknown parley: <slug>`.
+- `parley note` sends `ask note` with the note, and prints the line of the ask. With `<slug>`, `<ask>` is the number of the ask in the parley, else its ID. An `<ask>` that is not a positive integer fails with `Invalid ask: <ask>`.
+- `rule` lists the rules, as `rule list` of the tool, with the filter of `--kind` and `--status`. The other actions send the `rule` request of the action as the user, and print the line of the rule (see [Text results](#text-results)). The action is only the first argument after `rule`, so an option before it gives the usage. An `<id>` that is not a positive integer fails with `Invalid rule id: <id>`, and a kind or a status that is not one fails with `Invalid rule kind: <kind>` or `Invalid rule status: <status>`.
+- `item` runs the `item` tool with the action `list`, `add`, `set`, `read` (`show`) or `link`, and prints its text result (see [item](#item)). The words of `add` after the action are the title. An `<id>` that is not a positive integer fails with `Invalid item id: <id>`, a state that is not one fails with `Invalid item state: <state>`, and a kind that is not one with `Invalid edge kind: <kind>`.
+- An option that the command does not know, or that comes twice, fails with `Unknown <command> argument: <option>`, and an option without its value fails with `<option> requires a value`.
+
+### store load
+
+`store load <file>` writes the store file `<file>` (see [Store import](#store-import)) into the empty stores of the host while no host runs, and prints `<list>: <count>` for each list of the file: `persons`, `threads`, `messages`, `rules`, `held`, `parleys`, `asks`, `outbox`, `todos`, `callerTodos` and `items`. It checks the file before it opens a store, with the errors of the store import. It takes the lock of the host, else it fails with `A harness host runs for <host>: stop it, then run projects store load again`. When a list of the two stores is not empty, it fails with `The store of <host> is not empty: projects store load writes only into an empty store`, and writes nothing.
+
+It writes the asks, the list of the root conversation and the list of each caller of `callerTodos`, also an empty one, into `durable.sqlite` in one commit, which creates the root conversation when the store has none. It writes the other lists into `project.sqlite`, with the IDs of the file. The write into `project.sqlite` stays open across the commit of `durable.sqlite`, and a commit that fails rolls it back, or leaves no `project.sqlite` when there was none. An empty `project.sqlite` keeps its ID counters and its deliveries.
+
+The asks and the lists of todos are documents of the harness host, and `@vzlentin/harness` exports no handle that writes them without a running host. So `src/projects/store-load.ts` defines its own copies of the documents `harness.asks`, `harness.todos`, `harness.caller-todos` and `harness.save-todos`, with the kinds, the versions, the scopes and the initial values of the pinned harness. The link of each todo with an `ask` to its list goes into `harness.save-todos`, so the note of the ask closes the todo. A move of the harness pin must keep these copies equal to the documents of harness.
