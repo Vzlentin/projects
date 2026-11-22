@@ -1,4 +1,8 @@
-- The code moves here from harness (plan: `Val/Projects/Harness/projects-repo.md` in the vault). Until it arrives, `src/`, `test/` and `pi/*.ts` do not exist: `npm run check` has no build step and `vite.config.ts` has no `pack` block. Add both, as in harness, in the change that brings `src/`.
+- The design and the decisions of this repository are in the vault: `Val/Projects/Harness/projects-repo.md`. `docs/spec.md` is the behaviour spec of the entry, its requests, its tools, the gate and the digest: update it in the same change as the behaviour.
+- `src/projects/index.ts` is the projects entry, exported as `@vzlentin/projects/entry`. A host loads it only as an external entry, through `entries.json` or `piDurable.extensions`.
+- Import `@vzlentin/harness` only through a subpath of its `package.json` `exports`. `no-restricted-imports` in `vite.config.ts` reads them from the installed package and refuses the others, such as `dist/` or `src/`.
+- The entry reaches host state only through the handles of the entry API (`EntryOptions`, `@vzlentin/harness/entry-api`). When it needs more, add a handle in harness, not an export of a harness module that holds or reads host state.
+- Tests run a real host of the pinned harness, with the entry of this checkout named in `entries.json` (`test/helpers.ts`). A test that needs a host handle that harness does not export loads `test/fixtures/projects.ts`.
 - Toolchain: Vite+ (`vite-plus`, the `vp` command). Run `vp check --fix` before `npm run check`.
 - Lint: Oxlint with the anti-slop plugin, vendored in `tools/oxlint/anti-slop/` (see its `UPSTREAM.md`). Keep it equal to the copy in harness.
 - Two npm packages, released together with one version: `@vzlentin/projects` and `@vzlentin/pi-projects` (`pi/`), which depends on `@vzlentin/projects` at the exact same version.

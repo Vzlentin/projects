@@ -6,15 +6,25 @@
 		"type": "git",
 		"url": "git+https://github.com/Vzlentin/projects.git"
 	},
+	"files": [
+		"dist"
+	],
 	"type": "module",
 	"exports": {
+		"./entry": {
+			"types": "./dist/projects/index.d.ts",
+			"default": "./dist/projects/index.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"scripts": {
-		"check": "vp check --deny-warnings && tsc -p tsconfig.json && vp test",
+		"build": "vp pack",
+		"prepare": "npm run build",
+		"prepack": "npm run build",
+		"check": "npm run build && vp check --deny-warnings && tsc -p tsconfig.json && vp test",
 		"test": "vp test"
 	},
 	"dependencies": {
@@ -25,7 +35,7 @@
 		"@earendil-works/pi-durable": "1.6.0",
 		"@earendil-works/pi-mcp": "1.6.0",
 		"@earendil-works/pi-tui": "1.6.0",
-		"@vzlentin/harness": "git+https://github.com/Vzlentin/harness.git#bd0c948029c4a3d7852903c2748c2eb6f9820958",
+		"@vzlentin/harness": "git+https://github.com/Vzlentin/harness.git#5a676bad8d6076b5bdacc341bbafaf573d2f6187",
 		"typebox": "1.3.27"
 	},
 	"devDependencies": {

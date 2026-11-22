@@ -1,0 +1,92 @@
+/**
+ * A `piDurable` entry with a task that asks a child it owns one question and completes with the answer. With `idFile`,
+ * the task writes the conversation IDs of its child and its root there as JSON, after it opens the child. `overlay` and
+ * `limit` go to the child's spec. With `close`, the task closes its child after the answer. With `below`, the task
+ * first creates a child task of its own kind with the input `below`, in a commit of its own, and owns it; pi-durable
+ * keeps the task `completing` until that child task ends.
+ */
+import { writeFile } from "node:fs/promises";
+import type * as Durable from "@earendil-works/pi-durable";
+import type { Children, Place, Spec } from "@vzlentin/harness/children";
+import type { Overlay } from "@vzlentin/harness/overlay";
+
+type Input = {
+	cwd: string;
+	prompt: string;
+	agentModel?: boolean;
+	idFile?: string;
+	overlay?: Overlay;
+	limit?: number;
+	close?: boolean;
+	below?: { prompt: string; idFile?: string };
+};
+
+export default function askEntry({
+	durable,
+	children,
+	place,
+}: {
+	readonly durable: typeof Durable;
+	readonly children: Children;
+	readonly place: Place;
+}) {
+	const Ask: Durable.Task<Input, { phase: "ask" }, string, object> = durable.defineTask<
+		Input,
+		{ phase: "ask" },
+		string
+	>({
+		name: "fixture.ask",
+		version: 1,
+		initial: () => ({ phase: "ask" }),
+		phases: {
+			ask: async (task, runtime, context) => {
+				const { below } = task.input;
+
+				if (below !== undefined) {
+					await runtime.commit(async (tx) => {
+						await tx.createTask(
+							Ask,
+							{ cwd: task.input.cwd, ...below },
+							{ ownership: { kind: "task", taskId: runtime.taskId } },
+						);
+
+						return undefined;
+					}, context);
+				}
+
+				const owner = { kind: "task", taskId: runtime.taskId, conversation: runtime.conversationId } as const;
+				const model = task.input.agentModel === true ? {} : { provider: "faux", model: "faux-1" };
+				let spec: Spec = { root: "fixture", ...model, cwd: task.input.cwd };
+
+				if (task.input.overlay !== undefined) spec = { ...spec, overlay: task.input.overlay };
+
+				if (task.input.limit !== undefined) spec = { ...spec, limit: task.input.limit };
+
+				const child = await children.open(place, owner, `fixture:${runtime.taskId}`, spec, context);
+
+				if (task.input.idFile !== undefined) {
+					const ids = { child: String(child.id), root: String(runtime.conversationId) };
+					await writeFile(task.input.idFile, JSON.stringify(ids));
+				}
+
+				const answer = await child.ask({ type: "input", content: task.input.prompt, requestId: "q" }, context);
+
+				if (task.input.close === true) await child.close(context);
+				await runtime.commit(
+					() => ({
+						status: "terminal",
+						outcome:
+							answer.status === "ok"
+								? { status: "completed", result: answer.text }
+								: { status: "failed", error: { message: answer.reason } },
+					}),
+					context,
+				);
+			},
+		},
+		abort: (_task, runtime, context) =>
+			runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
+	});
+
+	return { extensions: [], tasks: [Ask], close: async () => {} };
+}
