@@ -84,7 +84,27 @@ export default defineConfig({
 			"anti-slop/require-readable-spacing": "error",
 			"anti-slop/require-safety-comment-for-type-assertion": "error",
 		},
-		overrides: [restrictImports(["src/**", "test/**", "pi/**"], harnessImports)],
+		overrides: [
+			restrictImports(["src/**", "test/**", "pi/**"], harnessImports),
+			// An override replaces the rule config of the earlier one, so the Pi package repeats `harnessImports`. It comes last:
+			// its `!` subpaths would let a runtime import of an exported harness subpath pass the pattern before it.
+			restrictImports(
+				["pi/**"],
+				{
+					regex: "^\\.\\./(src|dist)/",
+					allowTypeImports: true,
+					message:
+						"The Pi package loads the modules of @vzlentin/projects at runtime: import ../src or ../dist only for types.",
+				},
+				{
+					regex: "^@vzlentin/harness/",
+					allowTypeImports: true,
+					message:
+						"The Pi package loads harness from the folder of @vzlentin/projects at runtime: import @vzlentin/harness only for types.",
+				},
+				harnessImports,
+			),
+		],
 		options: { typeAware: true, typeCheck: true },
 	},
 	test: {

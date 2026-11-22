@@ -1,7 +1,7 @@
 {
 	"name": "@vzlentin/pi-projects",
 	"version": "0.0.0",
-	"description": "The Pi package of projects: installed in Pi, it makes a harness host a project",
+	"description": "The Pi package of projects: the project tools, the digest, the rules and memory sections, /rules, the gate, /drafts and the parley skill, and the projects entry of the harness host",
 	"keywords": [
 		"pi-package"
 	],
@@ -23,7 +23,16 @@
 		"typebox": "*"
 	},
 	"pi": {
-		"extensions": [],
-		"skills": []
+		"extensions": [
+			"./index.ts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"piDurable": {
+		"extensions": [
+			"./entry.js"
+		]
 	}
 }

@@ -18,6 +18,18 @@
 			"types": "./dist/projects/index.d.ts",
 			"default": "./dist/projects/index.js"
 		},
+		"./project-tool": {
+			"types": "./dist/project-tool.d.ts",
+			"default": "./dist/project-tool.js"
+		},
+		"./memory-tool": {
+			"types": "./dist/memory-tool.d.ts",
+			"default": "./dist/memory-tool.js"
+		},
+		"./protocol/*": {
+			"types": "./dist/protocol/*.d.ts",
+			"default": "./dist/protocol/*.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {

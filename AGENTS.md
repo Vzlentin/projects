@@ -9,3 +9,4 @@
 - `@vzlentin/harness` is a Git dependency pinned to a commit, as in workflows. Move the pin when this repository needs a newer harness.
 - Pin dependency versions exactly. The `@earendil-works/*` versions equal those of harness: change them together.
 - Never run `npm link` or `npm install` in `pi/`.
+- `pi/` files import `../src`, `../dist` and `@vzlentin/harness` only for types, and load modules at runtime from the installed `@vzlentin/projects` (`pi/index.ts`). A module they need must be in the root `exports`. `pi/entry.js` stays plain JavaScript, so the host loads the entry natively.
