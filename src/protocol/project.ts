@@ -324,13 +324,6 @@ export const RuleFilter = Type.Object({ kind: Type.Optional(RuleKind), status: T
 
 export type RuleFilter = Static<typeof RuleFilter>;
 
-/** The kinds of the documents of the project in the store, one for each list. */
-export const PERSONS_KIND = "harness.persons";
-export const THREADS_KIND = "harness.threads";
-export const RULES_KIND = "harness.rules";
-export const HELD_KIND = "harness.held";
-export const PARLEYS_KIND = "harness.parleys";
-
 /** The kind of the entry of a digest in the conversation of a hosted agent. */
 export const DIGEST_KIND = "harness.digest";
 

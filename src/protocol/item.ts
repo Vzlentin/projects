@@ -167,8 +167,5 @@ export function edgeItem(edge: EdgeInput): EdgeItem | undefined {
 	return from.kind === "item" ? { id: Number(from.value), other: edge.to } : { id: Number(to.value), other: edge.from };
 }
 
-/** The kind of the family of the documents of the items, one for each item, keyed by its ID. */
-export const ITEM_KIND = "harness.item";
-
 /** The kind of the document of the counter of the IDs of items. */
 export const ITEM_COUNTER_KIND = "harness.items";

@@ -1,11 +1,15 @@
-import { writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { request, requestEntry } from "@vzlentin/harness/client";
 import { entriesPath } from "@vzlentin/harness/entries";
+import { statePaths } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { PROJECTS_PROTOCOL_VERSION } from "../src/projects/index.ts";
 import { RuleList } from "../src/protocol/project.ts";
-import { setUp, startHost, tearDown } from "./helpers.ts";
+import { StoreFile } from "../src/protocol/store-file.ts";
+import { createHost, send, setUp, startHost, tearDown } from "./helpers.ts";
 
 beforeEach(setUp);
 
@@ -39,6 +43,32 @@ describe("the projects entry", () => {
 			);
 		} finally {
 			await host.close();
+		}
+	});
+
+	it("starts with an empty project.sqlite and leaves store.json as it is when the state directory has no project.sqlite", async () => {
+		const person = { id: 1, name: "Sam" };
+
+		const files = [
+			["store-valid", JSON.stringify({ ...Value.Create(StoreFile), persons: [person] })],
+			["store-broken", "{"],
+		] as const;
+
+		for (const [name, text] of files) {
+			await createHost(name);
+			const { dir, store } = statePaths(name);
+			await mkdir(dir, { recursive: true });
+			await writeFile(store, text);
+			const host = await startHost(name);
+
+			try {
+				expect(existsSync(join(dir, "project.sqlite"))).toBe(true);
+				expect(await send({ type: "person", action: "list" }, name)).toEqual({ persons: [] });
+			} finally {
+				await host.close();
+			}
+
+			expect(readFileSync(store, "utf8")).toBe(text);
 		}
 	});
 });

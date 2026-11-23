@@ -4,14 +4,12 @@
  * the project, the `ask` requests with their parleys, the checks of the labels `parley:<slug>` and `item:<id>`, the
  * digest before each input, the contracts of the answered read-backs, and the items that the reports of their workers
  * close, and drops the held actions of each child that ended. At the open of the host, it opens the project store,
- * which imports `store.json` at the first start, moves an old store to items and labels, sends the pending deliveries,
- * stops the workers of the work that ended, and drops the held actions of the children that ended while the host was
- * down.
+ * moves an old store to items and labels, sends the pending deliveries, stops the workers of the work that ended, and
+ * drops the held actions of the children that ended while the host was down.
  */
 import { copyJson, type JsonValue } from "@earendil-works/chord/json";
 import type { Entry, EntryLine, EntryOpen, EntryOptions, EntryRequest } from "@vzlentin/harness/entry-api";
 import { memoryDir } from "@vzlentin/harness/hosts";
-import { statePaths } from "@vzlentin/harness/protocol";
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import { projectToolsExtension } from "../project-tool.ts";
@@ -26,10 +24,10 @@ import { migrateLabels } from "./label-migration.ts";
 import { Compressor, type HostMemory, memoryExtension } from "./memory.ts";
 import { parleyReaction } from "./parleys.ts";
 import { sendDeliveries } from "./project-deliveries.ts";
+import { ProjectStore } from "./project-store.ts";
 import { serveProjectWatch } from "./project-watch.ts";
 import { type HandledRequest, handleProject, projectAsk, type ProjectsHost } from "./requests.ts";
 import { rulesExtension } from "./rules-section.ts";
-import { openProjectStore } from "./store-import.ts";
 import { workLabelChecks } from "./work-state.ts";
 import { stopEndedWork } from "./work-workers.ts";
 
@@ -111,18 +109,13 @@ export default function projects(options: EntryOptions): Entry {
 			host()
 				.store.items()
 				.map(({ id, title, state }) => ({ id, text: title, state })),
-		// The project store opens first, and imports `store.json` at the first start. The first start then moves the todos
-		// of the project to items, and the items that the children of an old store served to their labels, before any
-		// reader of the items or the labels. A worker of work that ended, such as one that a message resumed, stops at
-		// each start, and a child that ended while the host was down has its held actions dropped.
+		// The project store opens first. The first start then moves the todos of the project to items, and the items that
+		// the children of an old store served to their labels, before any reader of the items or the labels. A worker of
+		// work that ended, such as one that a message resumed, stops at each start, and a child that ended while the host
+		// was down has its held actions dropped.
 		open: async ({ harness, root, storage }) => {
-			const store = await openProjectStore({
-				dir: options.stateDir,
-				file: statePaths(options.host).store,
-				harness,
-				storage,
-				asks: options.asks,
-			});
+			// The host is the only writer, so a write never waits for a lock.
+			const store = ProjectStore.open(options.stateDir, 0);
 
 			try {
 				await migrateTodos(harness, store, options.todos, root.id);

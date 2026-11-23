@@ -1,16 +1,21 @@
 /**
  * `projects store load <file>`: writes the lists and the items of a store file into the empty `project.sqlite` of a
- * host, while no host runs, with the import of the first start of a host. It refuses a file with asks or todos, which
- * belong to the harness host.
+ * host, while no host runs. It refuses a file with asks or todos, which belong to the harness host. It creates
+ * `project.sqlite` only once its write commits.
  */
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { takeLock } from "@vzlentin/harness/lock";
 import { STORE_LOCK_WAIT_MS, statePaths } from "@vzlentin/harness/protocol";
 import { isMovedTodo } from "../protocol/item-move.ts";
 import { parseStoreFile, type StoreCounts, storeCounts, type StoreFile } from "../protocol/store-file.ts";
 import { PROJECT_STORE_FILE, ProjectStore, type StoreReader } from "./project-store.ts";
-import { importStoreFile, loadStoreFile } from "./store-import.ts";
+
+/** The file that the load writes, which becomes `project.sqlite` after its commit. */
+const LOAD_FILE = `${PROJECT_STORE_FILE}.import`;
+
+/** The files that SQLite keeps beside a database file. */
+const SIDE_FILES = ["", "-wal", "-shm", "-journal"];
 
 /**
  * Writes the lists of the store file at `path` into the project store of the host `host`, under the lock of the host,
@@ -42,9 +47,9 @@ export async function loadStore(host: string, path: string): Promise<StoreCounts
 
 		try {
 			if (store === undefined) {
-				await importStoreFile(dir, file);
+				await loadNewStore(dir, file);
 			} else if (isEmpty(store)) {
-				await loadStoreFile(store, file);
+				await writeStoreFile(store, file);
 			} else {
 				throw new Error(`The store of ${host} is not empty: projects store load writes only into an empty store`);
 			}
@@ -56,6 +61,64 @@ export async function loadStore(host: string, path: string): Promise<StoreCounts
 	} finally {
 		lock.close();
 	}
+}
+
+/**
+ * Writes `file` into a new `project.sqlite` in `dir`, which has none, with `writeStoreFile`. The file becomes
+ * `project.sqlite` only after the commit. A failure leaves no `project.sqlite`.
+ */
+async function loadNewStore(dir: string, file: StoreFile): Promise<void> {
+	removeDatabase(join(dir, LOAD_FILE));
+
+	try {
+		const store = ProjectStore.open(dir, 0, LOAD_FILE);
+
+		try {
+			await writeStoreFile(store, file);
+		} finally {
+			store.close();
+		}
+
+		renameSync(join(dir, LOAD_FILE), join(dir, PROJECT_STORE_FILE));
+	} catch (error) {
+		removeDatabase(join(dir, LOAD_FILE));
+		throw error;
+	}
+}
+
+/**
+ * Writes the persons, the threads with their messages, the rules, the held actions, the parleys and the items with
+ * their edges of `file` into `store` in one transaction, with the IDs of the file. A failure rolls `store` back. The
+ * write tells no listener. A rule with a source gets the thread of its source message. The highest ID that a rule had
+ * becomes `lastRule`, and the highest ID that an item had `lastItem`, when it is higher. It always writes the counter
+ * of the IDs of items.
+ */
+async function writeStoreFile(store: ProjectStore, file: StoreFile): Promise<void> {
+	await store.transaction(async (tx) => {
+		const threads = new Map<number, number>();
+
+		for (const person of file.persons) tx.addPerson(person);
+
+		for (const { messages, ...thread } of file.threads) {
+			tx.addThread(thread);
+
+			for (const message of messages) {
+				tx.addMessage(message);
+				threads.set(message.id, thread.id);
+			}
+		}
+
+		for (const { thread: _, ...rule } of file.rules) {
+			const thread = rule.source === undefined ? undefined : threads.get(rule.source);
+			tx.addRule(thread === undefined ? rule : { ...rule, thread });
+		}
+
+		for (const held of file.held) tx.addHeld(held);
+		tx.raiseLastRule(file.lastRule);
+
+		for (const parley of file.parleys) tx.addParley(parley);
+		tx.loadItems(file.items, file.lastItem);
+	});
 }
 
 /**
@@ -75,4 +138,9 @@ function isEmpty(store: StoreReader): boolean {
 	const lists = [store.persons(), store.threads(), store.rules({}), store.held(), store.parleys(), store.items()];
 
 	return lists.every((list) => list.length === 0);
+}
+
+/** Removes the database `path` and the files that SQLite keeps beside it. */
+function removeDatabase(path: string): void {
+	for (const suffix of SIDE_FILES) rmSync(`${path}${suffix}`, { force: true });
 }

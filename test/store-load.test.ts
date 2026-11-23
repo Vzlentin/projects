@@ -339,6 +339,21 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		expect(await hostedFile("asks-target")).toMatchObject({ asks: [], todos: [], callerTodos: [] });
 	});
 
+	it("leaves no project.sqlite and no project.sqlite.import when the write into a new store fails", async () => {
+		await createHost("load-unique");
+		const { dir } = statePaths("load-unique");
+		const parley = { id: 1, slug: "where", title: "Where", goal: "Pick.", status: "open", at: 1, by: "pi-1" } as const;
+		// The parse takes the file, and the UNIQUE slug of project.sqlite refuses it.
+		const path = join(root, "load-unique.json");
+		await writeFile(path, JSON.stringify({ ...Value.Create(StoreFile), parleys: [parley, { ...parley, id: 2 }] }));
+
+		const failed = await load("load-unique", path);
+		expect(failed).toMatchObject({ code: 1, stdout: "" });
+		expect(failed.stderr).toContain("UNIQUE");
+		expect(existsSync(join(dir, "project.sqlite"))).toBe(false);
+		expect(existsSync(join(dir, "project.sqlite.import"))).toBe(false);
+	});
+
 	it("loads a file of version 1 with its open todos moved to items, refuses one with a finished todo, and loads a file of version 2 with its items", async () => {
 		await createHost("load-v1");
 		await createHost("load-v2");
