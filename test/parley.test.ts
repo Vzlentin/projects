@@ -25,10 +25,12 @@ import {
 	send,
 	sendLine,
 	setUp,
+	spawnWithId,
 	startHost,
 	tearDown,
 	unlinkContract,
 	untilContract,
+	untilState,
 } from "./helpers.ts";
 
 let host: Host | undefined;
@@ -322,13 +324,13 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 		await untilContract("one-write");
 	});
 
-	it("ends a contract that shapes no item as done or dropped, and not an open parley", async () => {
+	it("ends a contract that shapes no item as done or dropped, and an open parley not as done", async () => {
 		for (const status of ["done", "dropped"] as const) {
 			const slug = `ends-${status}`;
 			const { call, readBack } = await framed(slug);
 			const end = { type: "parley", action: "end", caller: "pi-1", slug, status } as const;
 
-			await expect(send(end)).rejects.toThrow(`Parley ${slug} is open: only a contract ends`);
+			await expect(send({ ...end, status: "done" })).rejects.toThrow(`Parley ${slug} is open: it ends only as dropped`);
 			await answer([
 				{ id: call, answer: "a" },
 				{ id: readBack, answer: "ok" },
@@ -339,8 +341,48 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			const ended = Value.Parse(Parley, await send(end));
 			expect(ended).toMatchObject({ slug, status, by: "pi-1" });
 			expect((await readParley(slug)).parley).toEqual(ended);
-			await expect(send(end)).rejects.toThrow(`Parley ${slug} is ${status}: only a contract ends`);
+			await expect(send(end)).rejects.toThrow(`Parley ${slug} is ${status}: only an open parley or a contract ends`);
 		}
+	});
+
+	it("ends an open parley as dropped: it drops its open asks, and stops its workers", async () => {
+		const written = await round("pi-1", { slug: "dropped-open", title: "Where asks live", goal: "Pick the place." }, [
+			{ title: "Where", kind: "your call", options: OPTIONS, plan: "a" },
+			{ title: "Who reads" },
+			{ title: "Which writer" },
+		]);
+
+		const [where, reads, writer] = written.parleys[0]?.asks ?? [];
+		await answer([{ id: where?.id ?? 0, answer: "b" }]);
+		const child = await spawnWithId("dropping-session", { serves: { parley: "dropped-open" } });
+		const end = { type: "parley", action: "end", caller: "pi-1", slug: "dropped-open", status: "dropped" } as const;
+
+		try {
+			const ended = Value.Parse(Parley, await send(end));
+			expect(ended).toMatchObject({
+				slug: "dropped-open",
+				status: "dropped",
+				design_sense: "None: the parley was dropped while open.",
+				by: "pi-1",
+			});
+
+			const read = await readParley("dropped-open");
+			expect(read.parley).toEqual(ended);
+			expect(read.asks.map((ask) => [ask.id, ask.state])).toEqual([
+				[where?.id, "answered"],
+				[reads?.id, "dropped"],
+				[writer?.id, "dropped"],
+			]);
+			await untilState(child.handle, "ended");
+			await expect(send(end)).rejects.toThrow("Parley dropped-open is dropped: only an open parley or a contract ends");
+		} finally {
+			await send({ type: "stop", caller: "dropping-session", handle: child.handle });
+		}
+
+		await framed("dropped-sense");
+		const sensed = Value.Parse(Parley, await send({ ...end, slug: "dropped-sense" }));
+		expect(sensed).toMatchObject({ status: "dropped", design_sense: "One writer." });
+		expect((await readParley("dropped-sense")).asks.map((ask) => ask.state)).toEqual(["dropped", "dropped"]);
 	});
 
 	it("replaces the question of an open ask with a round that names it, and keeps its number", async () => {
@@ -533,7 +575,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			[{ type: "ask", action: "read", slug: "checked", n: 9 }, "Parley checked has no ask 9"],
 			[
 				{ type: "parley", action: "end", caller: "pi-1", slug: "checked", status: "done" },
-				"Parley checked is open: only a contract ends",
+				"Parley checked is open: it ends only as dropped",
 			],
 			[
 				{

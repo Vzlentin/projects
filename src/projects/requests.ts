@@ -212,7 +212,8 @@ async function parley(
 		case "take":
 			return host.harness.commit((tx) => takeParley(tx, host.store, host.asks, request.slug, request.caller), context);
 		case "end": {
-			const ended = host.store.write((tx) => endParley(tx, request.slug, request.status, request.caller));
+			const { slug, status, caller: by } = request;
+			const ended = await endParley(host.harness, host.store, host.asks, { slug, status, by }, context);
 
 			await stopWork(host, [`parley:${ended.slug}`], afterTurn(request.caller));
 

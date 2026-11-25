@@ -44,8 +44,8 @@ type OpenParley = Extract<Parley, { readonly status: "open" }>;
  * must change a field of a known open parley. With `round.item`, the round also writes the edge
  * `parley:<slug> shapes item:<item>` with the checks of `item link`. An ask of the round with `ask`, the number of an
  * open ask of its open parley, replaces the question of that ask, which keeps its number. The new asks of a parley take
- * the next numbers of that parley. The round is one commit of `harness`: the parley and its edge go to `store` in one
- * write in the callback of that commit, before the asks. The listeners of `store` hear about the round only after the commit settles, so that
+ * the next numbers of that parley. The round is one commit of `harness`: the replaced asks change first, then the parley
+ * and its edge go to `store` in one write in the callback of that commit, then the new asks come. The listeners of `store` hear about the round only after the commit settles, so that
  * they read the parley and its asks together.
  */
 export async function writeRound(
@@ -72,6 +72,8 @@ async function roundIn(
 	const frame = round.parley;
 	const { replaced, added } = splitRound(store, current, round);
 
+	for (const { ask, input } of replaced) await asks.replace(tx, ask.id, input, by, at);
+
 	const parley =
 		frame === undefined
 			? undefined
@@ -86,8 +88,6 @@ async function roundIn(
 				});
 
 	const n = parley === undefined ? 0 : lastNumber(current, parley.id);
-
-	for (const { ask, input } of replaced) replaceQuestion(ask, input, at, by);
 
 	const written = await asks.add(
 		tx,
@@ -209,22 +209,60 @@ export async function takeParley(
 	return { parley, asks: parleyAsks(await store.inCommit(tx), parley.id) };
 }
 
-/**
- * Ends the contract `slug` with the status `status` for the caller `by`, and gives the parley. A contract that shapes
- * an open item fails: the close of its last item ends it.
- */
-export function endParley(tx: StoreTx, slug: string, status: ParleyEnd, by: string): Parley {
-	const parley = tx.parleyBySlug(slug);
+/** The design sense of an open parley with none that ends as dropped: the schema of a dropped parley needs one. */
+const DROPPED_OPEN = "None: the parley was dropped while open.";
 
-	if (parley.status !== "contract") throw new Error(`Parley ${slug} is ${parley.status}: only a contract ends`);
-	const work = contractItems(tx, slug);
-	const open = work.filter((item) => item.state === "open").map((item) => item.id);
+/**
+ * Ends the parley `slug` with the status `status` for the caller `by`, and gives the parley. A contract ends as done or
+ * dropped, and a contract that shapes an open item fails: the close of its last item ends it. An open parley ends only
+ * as dropped: its open asks are dropped, and it keeps its design sense, or gets `DROPPED_OPEN` when it has none. The end
+ * is one commit of `harness`: the asks drop first, and the parley goes to `store` last. The listeners of `store` hear
+ * about the end only after the commit settles.
+ */
+export async function endParley(
+	harness: Pick<Harness, "commit">,
+	store: Pick<ProjectStore, "write" | "writeAcross" | "parleyBySlug">,
+	asks: EntryAsks,
+	{ slug, status, by }: { readonly slug: string; readonly status: ParleyEnd; readonly by: string },
+	context: Context,
+): Promise<Parley> {
+	return store.writeAcross(() =>
+		harness.commit(async (tx) => {
+			const parley = store.parleyBySlug(slug);
+
+			if (parley.status === "open") {
+				if (status !== "dropped") throw new Error(`Parley ${slug} is open: it ends only as dropped`);
+				const open = parleyAsks(await asks.inCommit(tx), parley.id).filter((ask) => ask.state === "open");
+
+				for (const ask of open) await asks.drop(tx, ask.id, by);
+
+				const sense = parley.design_sense ?? DROPPED_OPEN;
+
+				return store.write((stx) => endContract(stx, { ...parley, design_sense: sense }, status, by));
+			}
+
+			if (parley.status !== "contract") {
+				throw new Error(`Parley ${slug} is ${parley.status}: only an open parley or a contract ends`);
+			}
+
+			return store.write((stx) => {
+				closedWork(stx, parley.slug);
+
+				return endContract(stx, parley, status, by);
+			});
+		}, context),
+	);
+}
+
+/** Fails when the contract `slug` shapes an open item in `tx`. */
+function closedWork(tx: StoreTx, slug: string): void {
+	const open = contractItems(tx, slug)
+		.filter((item) => item.state === "open")
+		.map((item) => item.id);
 
 	if (open.length > 0) {
 		throw new Error(`Parley ${slug} shapes open items ${open.join(", ")}: close them, and the contract ends`);
 	}
-
-	return endContract(tx, parley, status, by);
 }
 
 /** The ask of `ref` in `asks`, in any state. */
@@ -461,31 +499,6 @@ function splitRound(parleys: Pick<StoreReader, "parleyBySlug">, asks: readonly A
 /** Fails on an entry of a round whose `ask` is not the number of an ask. */
 function invalidEntry(): never {
 	throw new Error("Invalid round: ask must be the number of an ask of the parley");
-}
-
-/**
- * Writes the question `input` over the question of the open ask `ask` in its commit, at `at` by the caller `by`: its
- * title, kind, tension, options, plan and view. A field that `input` does not give is removed. The ask keeps its ID,
- * its number, its asker, its state and its note.
- */
-function replaceQuestion(ask: Ask, input: AskInput, at: number, by: string): void {
-	delete ask.kind;
-	delete ask.tension;
-	delete ask.options;
-	delete ask.plan;
-	delete ask.view;
-	const { title, kind, tension, options, plan, view } = Value.Clone(input);
-	Object.assign(ask, { title, at, by });
-
-	if (kind !== undefined) ask.kind = kind;
-
-	if (tension !== undefined) ask.tension = tension;
-
-	if (options !== undefined) ask.options = options;
-
-	if (plan !== undefined) ask.plan = plan;
-
-	if (view !== undefined) ask.view = view;
 }
 
 /** The ask of `ref` in `asks`: the ask of its ID, or the ask of its number in its parley of `parleys`. */

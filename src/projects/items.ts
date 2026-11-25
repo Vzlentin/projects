@@ -223,11 +223,12 @@ export function unlinkItem(tx: StoreTx, input: EdgeInput): WorkItem {
 }
 
 /**
- * Ends the contract `parley` with the status `status` for the caller `by` in `tx`, and gives the ended parley.
+ * Ends the parley `parley`, which has a design sense, with the status `status` for the caller `by` in `tx`, and gives
+ * the ended parley.
  */
 export function endContract(
 	tx: StoreTx,
-	parley: Readonly<Extract<Parley, { design_sense: string }>>,
+	parley: Readonly<Parley & { readonly design_sense: string }>,
 	status: ParleyEnd,
 	by: string,
 ): Parley {
