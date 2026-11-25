@@ -89,6 +89,40 @@ describe("the shapes edge of a round and of a contract", { timeout: 30_000 }, ()
 		expect(linked).toMatchObject({ stage: "shaping", needsYou: true });
 	});
 
+	it("makes an open parley with no asks from a round with a new slug, and its edge, and later asks start at 1", async () => {
+		const item = await add("Shaped by an empty parley");
+		const slug = "empty-frame";
+		const parley = { slug, title: "Empty frame", goal: "Pick." };
+
+		const reply = Value.Parse(
+			AskWrite,
+			await send({ type: "ask", action: "round", caller: "pi-1", parley, item: item.id, asks: [] }),
+		);
+
+		expect(reply).toEqual({
+			parleys: [{ parley: expect.objectContaining({ ...parley, status: "open", by: "pi-1" }), asks: [] }],
+			asks: [],
+		});
+		expect(reply.parleys[0]).toEqual(Value.Parse(ParleyAsks, await send({ type: "parley", action: "read", slug })));
+		const linked = await read(item.id);
+		expect(linked.edges).toEqual([
+			{ from: `parley:${slug}`, kind: "shapes", to: `item:${item.id}`, at: expect.any(Number), by: "pi-1" },
+		]);
+		expect(linked.stage).toBe("shaping");
+
+		const asks = [{ title: "First" }, { title: "Second" }];
+
+		const later = Value.Parse(
+			AskWrite,
+			await send({ type: "ask", action: "round", caller: "pi-1", parley: { slug }, asks }),
+		);
+
+		expect(later.parleys[0]?.asks.map((ask) => [ask.title, ask.parley?.n])).toEqual([
+			["First", 1],
+			["Second", 2],
+		]);
+	});
+
 	it("refuses a round with an unknown item, a done item, or item without parley, and writes nothing", async () => {
 		const done = await add("Done before the round");
 		await send({ type: "item", action: "set", caller: "cli", id: done.id, state: "done" });

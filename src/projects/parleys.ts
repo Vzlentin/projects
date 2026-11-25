@@ -41,7 +41,8 @@ type OpenParley = Extract<Parley, { readonly status: "open" }>;
  * Writes the round `round` with the caller `by` as the asker of its asks, in `asks`, and gives the write: the parley with all of
  * its asks, or the new asks when they have no parley. With `round.parley`, a new slug makes an open parley, which needs
  * a title and a goal, and a known slug must be an open parley, whose fields the frame replaces. A round with no asks
- * must change a field of a known open parley. With `round.item`, the round also writes the edge
+ * and a new slug makes the open parley with no asks. A round with no asks and a known slug must change a field of its
+ * open parley. With `round.item`, the round also writes the edge
  * `parley:<slug> shapes item:<item>` with the checks of `item link`. An ask of the round with `ask`, the number of an
  * open ask of its open parley, replaces the question of that ask, which keeps its number. The new asks of a parley take
  * the next numbers of that parley. The round is one commit of `harness`: the replaced asks change first, then the parley
@@ -417,8 +418,9 @@ function framedFields(parley: Omit<OpenParley, "id">): readonly unknown[] {
 
 /**
  * Writes the open parley of the frame `frame` in `tx`, at `at` by the caller `by`, and gives it: a new parley with the
- * next ID for a new slug, or the known parley with the fields of the frame. With `reframe`, the round has no asks: the
- * frame must name an open parley and change its title, goal, evidence or design sense.
+ * next ID for a new slug, or the known parley with the fields of the frame. With `reframe`, the round has no asks: a
+ * new slug makes the parley, and a known slug must name an open parley and change its title, goal, evidence or design
+ * sense.
  */
 function frameParley(
 	tx: StoreTx,
@@ -429,7 +431,7 @@ function frameParley(
 	const existing = tx.findParleyBySlug(slug);
 	const unchanged = `A round with no asks must change the title, goal, evidence or design sense of the open parley ${slug}`;
 
-	if (reframe && existing?.status !== "open") throw new Error(unchanged);
+	if (reframe && existing !== undefined && existing.status !== "open") throw new Error(unchanged);
 	const found = existing === undefined ? undefined : openParley(existing);
 	const title = frame.title ?? found?.title;
 	const goal = frame.goal ?? found?.goal;

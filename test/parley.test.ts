@@ -592,10 +592,10 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 					type: "ask",
 					action: "round",
 					caller: "pi-1",
-					parley: { slug: "fresh", title: "Fresh", goal: "Pick." },
+					parley: { slug: "fresh", title: "Fresh" },
 					asks: [],
 				},
-				"A round with no asks must change the title, goal, evidence or design sense of the open parley fresh",
+				"Parley fresh is new: goal is required",
 			],
 			[
 				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "checked" }, item: 1, asks: [] },
