@@ -19,6 +19,7 @@ import {
 	type AnswerInput,
 	type Ask,
 	type AskRef,
+	type AskInput,
 	type AskRound,
 	isReadBack,
 	knownAsk,
@@ -27,7 +28,7 @@ import {
 	type ParleyFrame,
 } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
-import { parleyText } from "../protocol/project.ts";
+import { parleyText, RoundEntry } from "../protocol/project.ts";
 import { contractItems, endContract, itemForContract, writeEdge } from "./items.ts";
 import type { ProjectStore, StoreReader, StoreTx } from "./project-store.ts";
 
@@ -41,14 +42,15 @@ type OpenParley = Extract<Parley, { readonly status: "open" }>;
  * its asks, or the new asks when they have no parley. With `round.parley`, a new slug makes an open parley, which needs
  * a title and a goal, and a known slug must be an open parley, whose fields the frame replaces. A round with no asks
  * must change a field of a known open parley. With `round.item`, the round also writes the edge
- * `parley:<slug> shapes item:<item>` with the checks of `item link`. The asks of a parley take the next numbers of that
- * parley. The round is one commit of `harness`: the parley and its edge go to `store` in one write in the callback of
- * that commit, before the asks. The listeners of `store` hear about the round only after the commit settles, so that
+ * `parley:<slug> shapes item:<item>` with the checks of `item link`. An ask of the round with `ask`, the number of an
+ * open ask of its open parley, replaces the question of that ask, which keeps its number. The new asks of a parley take
+ * the next numbers of that parley. The round is one commit of `harness`: the parley and its edge go to `store` in one
+ * write in the callback of that commit, before the asks. The listeners of `store` hear about the round only after the commit settles, so that
  * they read the parley and its asks together.
  */
 export async function writeRound(
 	harness: Pick<Harness, "commit">,
-	store: Pick<ProjectStore, "write" | "writeAcross" | "parley">,
+	store: Pick<ProjectStore, "write" | "writeAcross" | "parley" | "parleyBySlug">,
 	asks: EntryAsks,
 	round: AskRound,
 	by: string,
@@ -60,7 +62,7 @@ export async function writeRound(
 /** Writes the round `round` of `writeRound` in the commit `tx`. */
 async function roundIn(
 	tx: Tx,
-	store: Pick<ProjectStore, "write" | "parley">,
+	store: Pick<ProjectStore, "write" | "parley" | "parleyBySlug">,
 	asks: EntryAsks,
 	round: AskRound,
 	by: string,
@@ -68,6 +70,7 @@ async function roundIn(
 	const current = await asks.inCommit(tx);
 	const at = Date.now();
 	const frame = round.parley;
+	const { replaced, added } = splitRound(store, current, round);
 
 	const parley =
 		frame === undefined
@@ -84,9 +87,11 @@ async function roundIn(
 
 	const n = parley === undefined ? 0 : lastNumber(current, parley.id);
 
+	for (const { ask, input } of replaced) replaceQuestion(ask, input, at, by);
+
 	const written = await asks.add(
 		tx,
-		round.asks.map((input, index) =>
+		added.map((input, index) =>
 			parley === undefined ? { input } : { input, parley: { id: parley.id, n: n + index + 1 } },
 		),
 		by,
@@ -417,6 +422,70 @@ function openParley(parley: Parley): OpenParley {
 	if (parley.status !== "open") throw new Error(`Parley ${parley.slug} is ${parley.status}: its asks do not change`);
 
 	return parley;
+}
+
+/** An open ask of a round and the question that replaces its own. */
+type Replace = { readonly ask: Ask; readonly input: AskInput };
+
+/**
+ * The entries of the round `round`, split: the open asks of `asks` that an entry with `ask`, a number in the parley of
+ * the round, replaces, and the new asks. It checks each replace before the round writes anything: the round has a
+ * parley, which is open, and the ask is there, open, and replaced once.
+ */
+function splitRound(parleys: Pick<StoreReader, "parleyBySlug">, asks: readonly Ask[], round: AskRound) {
+	const replaced: Replace[] = [];
+	const added: AskInput[] = [];
+
+	for (const input of round.asks) {
+		const { ask: n } = Value.Check(RoundEntry, input) ? input : invalidEntry();
+
+		if (n === undefined) {
+			added.push(input);
+			continue;
+		}
+
+		if (round.parley === undefined) throw new Error("A round that replaces an ask needs a parley");
+		const { slug } = round.parley;
+		openParley(parleys.parleyBySlug(slug));
+		const ask = resolveAsk(parleys, asks, { slug, n });
+
+		if (ask.state !== "open") throw new Error(`${slug} ask ${n} is ${ask.state}: only an open ask is replaced`);
+
+		if (replaced.some((each) => each.ask.id === ask.id)) throw new Error(`Round replaces ${slug} ask ${n} twice`);
+		replaced.push({ ask, input });
+	}
+
+	return { replaced, added };
+}
+
+/** Fails on an entry of a round whose `ask` is not the number of an ask. */
+function invalidEntry(): never {
+	throw new Error("Invalid round: ask must be the number of an ask of the parley");
+}
+
+/**
+ * Writes the question `input` over the question of the open ask `ask` in its commit, at `at` by the caller `by`: its
+ * title, kind, tension, options, plan and view. A field that `input` does not give is removed. The ask keeps its ID,
+ * its number, its asker, its state and its note.
+ */
+function replaceQuestion(ask: Ask, input: AskInput, at: number, by: string): void {
+	delete ask.kind;
+	delete ask.tension;
+	delete ask.options;
+	delete ask.plan;
+	delete ask.view;
+	const { title, kind, tension, options, plan, view } = Value.Clone(input);
+	Object.assign(ask, { title, at, by });
+
+	if (kind !== undefined) ask.kind = kind;
+
+	if (tension !== undefined) ask.tension = tension;
+
+	if (options !== undefined) ask.options = options;
+
+	if (plan !== undefined) ask.plan = plan;
+
+	if (view !== undefined) ask.view = view;
 }
 
 /** The ask of `ref` in `asks`: the ask of its ID, or the ask of its number in its parley of `parleys`. */

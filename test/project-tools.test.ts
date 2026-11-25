@@ -139,8 +139,8 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 
 		// The list of the threads gives one line for the thread and no message text; the read gives the messages.
 		expect(results.slice(0, 5)).toEqual([...messages, threadText, threadText + messages.join("")]);
-		// The runner refuses a rule without its source before it sends it.
-		expect(results[5]).toContain("set requires source");
+		// The host refuses a rule with neither its source nor the words of the user.
+		expect(results[5]).toContain("Invalid rule request: source: required");
 		expect(await send({ type: "rule", action: "list" })).toEqual({ rules: [] });
 
 		const facts = "Task:\nKeep the facts";
@@ -159,15 +159,36 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 			},
 			{ name: "rule", arguments: { action: "set", id: 1, status: "decided", saidBy: "user", source: draft.id } },
 			{ name: "rule", arguments: { action: "list", kind: "domain" } },
+			{
+				name: "rule",
+				arguments: {
+					action: "set",
+					name: "tone",
+					kind: "conduct",
+					value: "Short.",
+					saidBy: "user",
+					words: "Keep it short",
+				},
+			},
 		]);
 
 		const second = handleOf(await cli(["spawn", "--prompt", "Keep the facts"]));
 		await cli(["wait", second]);
 		const line = `1 scope (domain, open): 45 and 54. [said by user in message ${draft.id}]\n`;
 		// A child cannot decide a rule: the tool has no status, so its validator drops it, and the rule stays open.
-		expect(cellResults.get(facts)).toEqual([line, line, line]);
+		// The words of the user put a rule in effect at once.
+		const said = '2 tone (conduct, decided): Short. [said by user: "Keep it short"]\n';
+		expect(cellResults.get(facts)).toEqual([line, line, line, said]);
 		const rules = await send({ type: "rule", action: "list" });
-		expect(rules).toMatchObject({ rules: [{ id: 1, status: "open", saidBy: "user", source: draft.id }] });
+
+		expect(rules).toMatchObject({
+			rules: [
+				{ id: 1, status: "open", saidBy: "user", source: draft.id },
+				{ id: 2, status: "decided", saidBy: "user", words: "Keep it short" },
+			],
+		});
+		// A decided rule makes the gate check each later call of this host.
+		await send({ type: "rule", action: "delete", caller: "user", id: 2 });
 		// The second child wrote the facts, so its conversation is their caller, not the one that logged the messages.
 		const factsBy = Value.Parse(RuleList, rules).rules[0]?.by;
 		expect(factsBy).toMatch(/^\d+$/);
@@ -217,6 +238,11 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 			{ name: "parley", arguments: { action: "list" } },
 			{ name: "parley", arguments: { action: "drop", slug: "nope" } },
 			{ name: "parley", arguments: { action: "note", slug: "where", ask: 1, note: "20261115-where" } },
+			{
+				name: "parley",
+				arguments: { action: "round", slug: "fix", title: "Fix", goal: "Fix an ask.", asks: [{ title: "Old" }] },
+			},
+			{ name: "parley", arguments: { action: "round", slug: "fix", asks: [{ ask: 1, title: "New" }] } },
 		]);
 
 		const handle = handleOf(await cli(["spawn", "--prompt", "Keep the parley"]));
@@ -251,6 +277,8 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 		expect(await request({ type: "ask", action: "read", slug: "where", n: 1 }, { start: false })).toMatchObject({
 			note: "20261115-where",
 		});
+		// A round entry with ask replaces the question of that open ask, which keeps its number.
+		expect(results[12]).toBe("fix · open · Fix\n1 · New · open\n[fix] ok\n");
 	});
 
 	it("runs the flow of the parley skill from its first round to the contract", async () => {

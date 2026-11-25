@@ -309,6 +309,9 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 
 		const badLines: readonly (readonly [Record<string, JsonValue>, string])[] = [
 			[noSource, "Invalid rule request: source: required"],
+			[{ ...newRule, words: "A fact." }, "Invalid rule request: words: not allowed"],
+			[{ ...noSource, saidBy: person.id, words: "A fact." }, "Invalid rule request: source: required"],
+			[{ ...noSource, words: " " }, 'Invalid rule request: words: must match pattern "\\S"'],
 			[noAuthor, "Invalid rule request: saidBy: required"],
 			[noName, "Invalid rule request: name: required"],
 			[{ ...newRule, name: " " }, 'Invalid rule request: name: must match pattern "\\S"'],
@@ -575,6 +578,80 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 			await expect(send({ type: "rule", action: "retire", caller: "cli", id: 99 }, project)).rejects.toThrow(
 				"Unknown rule: 99",
 			);
+		} finally {
+			await started.close();
+		}
+	});
+
+	it("puts in effect at once a rule with the words of the user, and retires the rule that it replaces", async () => {
+		const project = "rule-words";
+		let started = await newHost(project);
+
+		try {
+			const person = Value.Parse(Person, await send({ type: "person", action: "add", name: "Lea" }, project));
+
+			const thread = Value.Parse(
+				Thread,
+				await send({ type: "thread", action: "add", topic: "T", persons: [person.id] }, project),
+			);
+
+			const log = { type: "message", action: "log", caller: "cli", thread: thread.id, from: "user" } as const;
+			const source = (await send({ ...log, direction: "out", text: "Rules." }, project)).id;
+			const rule = { type: "rule", action: "set", caller: "agent", saidBy: "user" } as const;
+
+			const old = Value.Parse(
+				Rule,
+				await send({ ...rule, source, name: "mdm", kind: "domain", value: "MDM is male." }, project),
+			);
+
+			await send({ type: "rule", action: "decide", caller: "user", id: old.id }, project);
+			const words = "MDM est feminin";
+
+			const said = Value.Parse(
+				Rule,
+				await send({ ...rule, words, name: "mdm", kind: "domain", value: "MDM is female.", replaces: old.id }, project),
+			);
+
+			expect(said).toEqual({
+				id: old.id + 1,
+				name: "mdm",
+				kind: "domain",
+				value: "MDM is female.",
+				status: "decided",
+				saidBy: "user",
+				words,
+				replaces: old.id,
+				at: expect.any(Number),
+				by: "agent",
+			});
+
+			// Words on a change of an open rule put it in effect, in place of its source message.
+			const open = Value.Parse(
+				Rule,
+				await send({ ...rule, source, name: "tone", kind: "conduct", value: "Short." }, project),
+			);
+
+			const inEffect = await send({ ...rule, id: open.id, words: "Keep it short" }, project);
+			expect(inEffect).toMatchObject({ id: open.id, status: "decided", words: "Keep it short" });
+			expect(inEffect).not.toHaveProperty("source");
+			expect(inEffect).not.toHaveProperty("thread");
+
+			await started.close();
+			started = await startHost(project);
+
+			expect(Value.Parse(RuleList, await send({ type: "rule", action: "list" }, project)).rules).toEqual([
+				{ ...old, status: "retired", at: expect.any(Number), by: "agent" },
+				said,
+				inEffect,
+			]);
+
+			// A change of the user makes the user its author: the words no longer back the text.
+			const changed = await send(
+				{ type: "rule", action: "edit", caller: "cli", id: said.id, value: "MDM: female." },
+				project,
+			);
+
+			expect(changed).not.toHaveProperty("words");
 		} finally {
 			await started.close();
 		}

@@ -21,10 +21,12 @@ import {
 	type PersonList,
 	type Rule,
 	RuleCreate,
-	RuleEdit,
+	RuleEditFromSource,
+	RuleEditFromWords,
 	RuleFilter,
 	type RuleList,
-	RuleNew,
+	RuleNewFromSource,
+	RuleNewFromWords,
 	RuleStateChange,
 	RuleUserEdit,
 	Thread,
@@ -103,22 +105,43 @@ export const ProjectRequestLine = Type.Union([
 	 * memory. A Pi session sends it at its first turn.
 	 */
 	Type.Object({ type: Type.Literal("memory"), action: Type.Literal("snapshot") }),
-	/** Adds an open rule, which can name the rule `replaces`, and replies with it. */
+	/** Adds an open rule with its source message, which can name the rule `replaces`, and replies with it. */
 	Type.Object({
 		type: Type.Literal("rule"),
 		action: Type.Literal("set"),
 		caller: Type.String(),
-		...RuleNew.properties,
+		...RuleNewFromSource.properties,
 	}),
 	/**
-	 * Changes the open rule `id`, and replies with it. It comes after the new rule, so a new rule without `source` fails on
-	 * `source`. The host refuses a change with `replaces`, and a change of a rule that is not open.
+	 * Changes the open rule `id` with its source message, and replies with it. The rule sets with a source come first, so
+	 * a rule set with neither `source` nor `words` fails on `source`. The host refuses a change with `replaces`, and a
+	 * change of a rule that is not open.
 	 */
 	Type.Object({
 		type: Type.Literal("rule"),
 		action: Type.Literal("set"),
 		caller: Type.String(),
-		...RuleEdit.properties,
+		...RuleEditFromSource.properties,
+	}),
+	/**
+	 * Adds a rule with the exact words of the user, which is decided at once and retires the rule `replaces`, and replies
+	 * with it.
+	 */
+	Type.Object({
+		type: Type.Literal("rule"),
+		action: Type.Literal("set"),
+		caller: Type.String(),
+		...RuleNewFromWords.properties,
+	}),
+	/**
+	 * Changes the open rule `id` with the exact words of the user, which decide it at once and retire the rule that it
+	 * replaces, and replies with it.
+	 */
+	Type.Object({
+		type: Type.Literal("rule"),
+		action: Type.Literal("set"),
+		caller: Type.String(),
+		...RuleEditFromWords.properties,
 	}),
 	/** Replies with the rules, in ID order: with `kind` or `status`, only those that have it. */
 	Type.Object({ type: Type.Literal("rule"), action: Type.Literal("list"), ...RuleFilter.properties }),

@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS rule (
 	thread INTEGER REFERENCES thread (id),
 	replaces INTEGER,
 	at INTEGER NOT NULL,
-	"by" TEXT NOT NULL
+	"by" TEXT NOT NULL,
+	words TEXT
 );
 CREATE TABLE IF NOT EXISTS held (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +120,7 @@ CREATE TABLE IF NOT EXISTS delivery (
 
 const MESSAGE_COLUMNS = `id, thread, COALESCE(person, 'user') AS "from", direction, state, at, text, "by", changed_at AS changedAt, changed_by AS changedBy`;
 
-const RULE_COLUMNS = `id, name, kind, value, status, COALESCE(said_by, 'user') AS saidBy, source, thread, replaces, at, "by"`;
+const RULE_COLUMNS = `id, name, kind, value, status, COALESCE(said_by, 'user') AS saidBy, source, thread, words, replaces, at, "by"`;
 
 const HELD_COLUMNS = `id, request_id AS requestId, agent, tool, command, rule, reason, state, ran_request_id AS ranRequestId, ran_at AS ranAt, at, "by"`;
 
@@ -499,7 +500,7 @@ export class StoreTx extends StoreReader {
 	/** Adds the rule `rule`, with the next ID when it has none, and gives it. */
 	addRule(rule: Omit<Rule, "id"> & { id?: number }): Rule {
 		const id = this.#insert(
-			`INSERT INTO rule (id, name, kind, value, status, said_by, source, thread, replaces, at, "by") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO rule (id, name, kind, value, status, said_by, source, thread, words, replaces, at, "by") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			rule.id ?? null,
 			...ruleValues(rule),
 		);
@@ -513,7 +514,7 @@ export class StoreTx extends StoreReader {
 	putRule(rule: Rule): void {
 		this.db
 			.prepare(
-				`UPDATE rule SET name = ?, kind = ?, value = ?, status = ?, said_by = ?, source = ?, thread = ?, replaces = ?, at = ?, "by" = ? WHERE id = ?`,
+				`UPDATE rule SET name = ?, kind = ?, value = ?, status = ?, said_by = ?, source = ?, thread = ?, words = ?, replaces = ?, at = ?, "by" = ? WHERE id = ?`,
 			)
 			.run(...ruleValues(rule), rule.id);
 		this.#record("rule", rule.id);
@@ -681,6 +682,7 @@ export class ProjectStore extends StoreReader {
 			db.exec("PRAGMA journal_mode = WAL");
 			db.exec("PRAGMA foreign_keys = ON");
 			db.exec(SCHEMA);
+			addRuleWords(db);
 		} catch (error) {
 			db.close();
 			throw error;
@@ -808,9 +810,28 @@ function messageValues(message: DistributiveOmit<FileMessage, "id">): SQLInputVa
 }
 
 function ruleValues(rule: Omit<Rule, "id">): SQLInputValue[] {
-	const { name, kind, value, status, saidBy, source, thread, replaces, at, by } = rule;
+	const { name, kind, value, status, saidBy, source, thread, words, replaces, at, by } = rule;
 
-	return [name, kind, value, status, personOf(saidBy), source ?? null, thread ?? null, replaces ?? null, at, by];
+	return [
+		name,
+		kind,
+		value,
+		status,
+		personOf(saidBy),
+		source ?? null,
+		thread ?? null,
+		words ?? null,
+		replaces ?? null,
+		at,
+		by,
+	];
+}
+
+/** Adds the column `words` to the table `rule` of a store that was created before it. */
+function addRuleWords(db: DatabaseSync): void {
+	const columns = db.prepare("SELECT name FROM pragma_table_info('rule')").all();
+
+	if (!columns.some((column) => column.name === "words")) db.exec("ALTER TABLE rule ADD COLUMN words TEXT");
 }
 
 function heldValues(held: DistributiveOmit<HeldAction, "id">): SQLInputValue[] {

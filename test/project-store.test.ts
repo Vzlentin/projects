@@ -1,7 +1,8 @@
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
-import { ProjectStore, type StoreChange } from "../src/projects/project-store.ts";
+import { PROJECT_STORE_FILE, ProjectStore, type StoreChange } from "../src/projects/project-store.ts";
 import { approveHeld, holdAction, runApproved } from "../src/projects/project.ts";
 import { root, setUp, tearDown } from "./helpers.ts";
 
@@ -60,6 +61,43 @@ describe("project store", () => {
 		store.write((tx) => tx.removeRule(rule.id));
 
 		expect(writes[1]).toEqual([{ table: "rule", id: rule.id }]);
+	});
+
+	it("opens a store whose rules have no words column, keeps its rules, and stores the words of a new rule", async () => {
+		const dir = await mkdtemp(join(root, "rule-words-"));
+		const db = new DatabaseSync(join(dir, PROJECT_STORE_FILE));
+		db.exec(`CREATE TABLE rule (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
+			status TEXT NOT NULL, said_by INTEGER, source INTEGER, thread INTEGER, replaces INTEGER,
+			at INTEGER NOT NULL, "by" TEXT NOT NULL
+		)`);
+		db.exec(
+			`INSERT INTO rule (name, kind, value, status, at, "by") VALUES ('old', 'domain', 'Old.', 'decided', 1, 'a')`,
+		);
+		db.close();
+		const old = ProjectStore.open(dir, 0);
+
+		try {
+			const said = old.write((tx) =>
+				tx.addRule({
+					name: "new",
+					kind: "domain",
+					value: "New.",
+					status: "decided",
+					saidBy: "user",
+					words: "MDM est feminin",
+					at: 2,
+					by: "a",
+				}),
+			);
+
+			expect(old.rules({})).toEqual([
+				{ id: 1, name: "old", kind: "domain", value: "Old.", status: "decided", saidBy: "user", at: 1, by: "a" },
+				said,
+			]);
+		} finally {
+			old.close();
+		}
 	});
 
 	it("rolls a failed write back and tells no listener", () => {

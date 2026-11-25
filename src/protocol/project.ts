@@ -140,9 +140,9 @@ export const RuleStatus = Type.Enum(RULE_STATES);
 export type RuleStatus = Static<typeof RuleStatus>;
 
 /**
- * A rule of the project, with who said it, the message that is its source, and the thread of that message. A rule that
- * the user creates or edits has no source and no thread. `at` is the time of its last change, in epoch milliseconds,
- * and `by` is the caller of that change.
+ * A rule of the project, with who said it, the message that is its source, and the thread of that message, or the
+ * exact words of the user that an agent recorded. A rule that the user creates or edits has no source, no thread and no
+ * words. `at` is the time of its last change, in epoch milliseconds, and `by` is the caller of that change.
  */
 export const Rule = Type.Object({
 	id: LocalId,
@@ -154,6 +154,8 @@ export const Rule = Type.Object({
 	source: Type.Optional(StoreId),
 	/** The thread of the message `source`; a rule with no source has none. */
 	thread: Type.Optional(StoreId),
+	/** The exact words of the user that say the rule, as an agent recorded them. */
+	words: Type.Optional(Text),
 	replaces: Type.Optional(LocalId),
 	at: Time,
 	by: Caller,
@@ -248,44 +250,64 @@ export const ThreadJoin = Type.Object({ id: StoreId, person: LocalId });
 
 export type ThreadJoin = Static<typeof ThreadJoin>;
 
+/**
+ * What the projects entry reads of each ask of a round beyond the question that harness checks: `ask`, the number of an
+ * open ask of the parley of the round, which the question replaces. Harness accepts the extra key and does not check it.
+ */
+export const RoundEntry = Type.Object({ ask: Type.Optional(LocalId) });
+
 /** The input of a mark of the message out `message` with `state`. */
 export const MessageMarkInput = Type.Object({ message: StoreId, state: MessageMark });
 
 export type MessageMarkInput = Static<typeof MessageMarkInput>;
 
 /**
- * The input of a new rule of an agent, which can name the older rule that it replaces. Its status is `open`: only the
- * user changes the status of a rule.
+ * The fields of a new rule of an agent, which can name the older rule that it replaces. Only the user changes the status
+ * of a rule.
  */
-export const RuleNew = Type.Object({
+const RuleNewFields = {
 	id: Type.Optional(Type.Never()),
 	name: Text,
 	kind: RuleKind,
 	value: Text,
 	status: Type.Optional(Type.Never()),
-	saidBy: Author,
-	source: StoreId,
 	replaces: Type.Optional(LocalId),
-});
+};
 
-export type RuleNew = Static<typeof RuleNew>;
-
-/** The input of a change of the open rule `id` by an agent. The host refuses `replaces` on a change. */
-export const RuleEdit = Type.Object({
+/** The fields of a change of the open rule `id` by an agent. The host refuses `replaces` on a change. */
+const RuleEditFields = {
 	id: LocalId,
 	name: Type.Optional(Text),
 	kind: Type.Optional(RuleKind),
 	value: Type.Optional(Text),
 	status: Type.Optional(Type.Never()),
-	saidBy: Author,
-	source: StoreId,
 	replaces: Type.Optional(LocalId),
-});
+};
 
-export type RuleEdit = Static<typeof RuleEdit>;
+/** The provenance of a rule set that names its source: who said it, and the message that says it. The rule is open. */
+const RuleFromSource = { saidBy: Author, source: StoreId, words: Type.Optional(Type.Never()) };
 
-/** The input of a rule set: a new rule without `id`, a change of a rule with `id`. */
-export const RuleSet = Type.Union([RuleNew, RuleEdit]);
+/** The provenance of a rule set that the user said: the exact words of the user. The rule is decided at once. */
+const RuleFromWords = { saidBy: Type.Literal("user"), words: Text, source: Type.Optional(Type.Never()) };
+
+/** A new rule with its source message. */
+export const RuleNewFromSource = Type.Object({ ...RuleNewFields, ...RuleFromSource });
+
+/** A change of the open rule `id` with its source message. */
+export const RuleEditFromSource = Type.Object({ ...RuleEditFields, ...RuleFromSource });
+
+/** A new rule with the exact words of the user. */
+export const RuleNewFromWords = Type.Object({ ...RuleNewFields, ...RuleFromWords });
+
+/** A change of the open rule `id` with the exact words of the user. */
+export const RuleEditFromWords = Type.Object({ ...RuleEditFields, ...RuleFromWords });
+
+/**
+ * The input of a rule set: a new rule without `id`, a change of a rule with `id`, each with a source message or with
+ * the words of the user. The forms with a source come first, so a rule set with neither `source` nor `words` fails on
+ * `source`.
+ */
+export const RuleSet = Type.Union([RuleNewFromSource, RuleEditFromSource, RuleNewFromWords, RuleEditFromWords]);
 
 export type RuleSet = Static<typeof RuleSet>;
 
@@ -401,10 +423,11 @@ export function messageLine(message: Message, names: PersonNames): string {
 	return `${message.id} ${time(message.at)} ${authorText(message.from, names)} (${message.state}): ${message.text}`;
 }
 
-function saidLine(fact: Pick<Rule, "saidBy" | "source">, names: PersonNames): string {
+function saidLine(fact: Pick<Rule, "saidBy" | "source" | "words">, names: PersonNames): string {
 	const source = fact.source === undefined ? "" : ` in message ${fact.source}`;
+	const words = fact.words === undefined ? "" : `: "${fact.words}"`;
 
-	return `said by ${authorText(fact.saidBy, names)}${source}`;
+	return `said by ${authorText(fact.saidBy, names)}${source}${words}`;
 }
 
 export function ruleLine(rule: Rule, names: PersonNames): string {

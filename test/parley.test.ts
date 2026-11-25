@@ -343,6 +343,66 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 		}
 	});
 
+	it("replaces the question of an open ask with a round that names it, and keeps its number", async () => {
+		const { call, readBack } = await framed("replaced");
+
+		const replaced = await round("pi-1", { slug: "replaced" }, [
+			{ title: "Where", tension: "One writer", view: "Old" },
+		]);
+
+		const extra = replaced.parleys[0]?.asks[2];
+		await send({ type: "ask", action: "note", caller: "pi-1", slug: "replaced", n: 1, note: "where-note" });
+		const before = await readParley("replaced");
+
+		const line = {
+			type: "ask",
+			action: "round",
+			caller: "pi-2",
+			parley: { slug: "replaced" },
+			asks: [
+				{ ask: 1, title: "Where now", kind: "my call", options: [OPTIONS[1]], plan: "b" },
+				{ title: "Who reads" },
+				{ ask: 3, title: "Which writer" },
+			],
+		};
+
+		const written = Value.Parse(AskWrite, JSON.parse(await sendRaw(JSON.stringify(line))));
+		const asks = written.parleys[0]?.asks ?? [];
+		const [first, , third] = before.asks;
+
+		expect(asks.map((ask) => [ask.id, ask.parley?.n])).toEqual([
+			[call, 1],
+			[readBack, 2],
+			[extra?.id, 3],
+			[(extra?.id ?? 0) + 1, 4],
+		]);
+		expect(asks[0]).toEqual({
+			id: call,
+			title: "Where now",
+			kind: "my call",
+			options: [OPTIONS[1]],
+			plan: "b",
+			parley: first?.parley,
+			note: "where-note",
+			state: "open",
+			asker: "pi-1",
+			at: expect.any(Number),
+			by: "pi-2",
+		});
+		expect(asks[1]).toEqual(before.asks[1]);
+		expect(asks[2]).toEqual({
+			id: extra?.id,
+			title: "Which writer",
+			parley: third?.parley,
+			state: "open",
+			asker: "pi-1",
+			at: expect.any(Number),
+			by: "pi-2",
+		});
+		expect(asks[3]).toMatchObject({ title: "Who reads", state: "open", asker: "pi-2" });
+		expect(await readParley("replaced")).toEqual(written.parleys[0]);
+	});
+
 	it("changes the frame of an open parley with a round that has no asks", async () => {
 		await framed("reframed");
 		const before = await readParley("reframed");
@@ -370,6 +430,13 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			{ id: contract.readBack, answer: "ok" },
 		]);
 		await untilContract("signed");
+		await round("pi-1", { slug: "fixed", title: "T", goal: "G." }, [
+			{ title: "A", options: OPTIONS },
+			{ title: "B" },
+			{ title: "C" },
+		]);
+		await answer([{ slug: "fixed", n: 1, answer: "a" }]);
+		await send({ type: "ask", action: "drop", caller: "pi-1", slug: "fixed", n: 2 });
 
 		const before = { ...(await stored()), asks: await everyAsk() };
 
@@ -579,6 +646,64 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			[
 				{ type: "parley", action: "end", caller: "pi-1", slug: "signed", status: "open" },
 				"Invalid parley request: status: must be equal to constant",
+			],
+			// A round that replaces an ask checks each replace before it writes the frame or a new ask.
+			[
+				{ type: "ask", action: "round", caller: "pi-1", asks: [{ ask: 1, title: "X" }] },
+				"A round that replaces an ask needs a parley",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "fixed" }, asks: [{ ask: 0, title: "X" }] },
+				"Invalid round: ask must be the number of an ask of the parley",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "fixed" }, asks: [{ ask: "3", title: "X" }] },
+				"Invalid round: ask must be the number of an ask of the parley",
+			],
+			[
+				{
+					type: "ask",
+					action: "round",
+					caller: "pi-1",
+					parley: { slug: "fresh", title: "T", goal: "G." },
+					asks: [{ ask: 1, title: "X" }],
+				},
+				"Unknown parley: fresh",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "signed" }, asks: [{ ask: 1, title: "X" }] },
+				"Parley signed is contract: its asks do not change",
+			],
+			[
+				{
+					type: "ask",
+					action: "round",
+					caller: "pi-1",
+					parley: { slug: "fixed", title: "Changed" },
+					asks: [{ title: "New" }, { ask: 9, title: "X" }],
+				},
+				"Parley fixed has no ask 9",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "fixed" }, asks: [{ ask: 1, title: "X" }] },
+				"fixed ask 1 is answered: only an open ask is replaced",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "fixed" }, asks: [{ ask: 2, title: "X" }] },
+				"fixed ask 2 is dropped: only an open ask is replaced",
+			],
+			[
+				{
+					type: "ask",
+					action: "round",
+					caller: "pi-1",
+					parley: { slug: "fixed" },
+					asks: [
+						{ ask: 3, title: "X" },
+						{ ask: 3, title: "Y" },
+					],
+				},
+				"Round replaces fixed ask 3 twice",
 			],
 		];
 

@@ -78,14 +78,15 @@ export const THREAD_TOOL_DESCRIPTION = `Read and write the threads of messages b
 When you send a draft yourself, put \`draft:<id>\` in the command, such as the shell comment \`# draft:12\`: the draft is sent once the call runs.
 A person prints as \`<name> (<id>)\`: its ID is the \`from\` of \`log\`, and the \`saidBy\` of a rule.`;
 
-export const RULE_TOOL_DESCRIPTION = `Keep the rules of the project. A conduct rule says how to act. A domain rule says what is true for the project. You propose a rule; only the user puts it in effect.
-- set: without \`id\`, add an open rule with \`name\`, \`kind\` and \`value\`; \`replaces\` names the rule that it replaces, which is retired when the user decides the new one. With \`id\`, change the fields that you give of an open rule. To change a decided rule, add a new rule that replaces it. Each set needs \`saidBy\`, the ID of the person who said it or user, and \`source\`, the ID of the message that says it (see the \`thread\` tool).
+export const RULE_TOOL_DESCRIPTION = `Keep the rules of the project. A conduct rule says how to act. A domain rule says what is true for the project. You propose a rule; only the user puts it in effect, with a decide or with his own words.
+- set: without \`id\`, add an open rule with \`name\`, \`kind\` and \`value\`; \`replaces\` names the rule that it replaces, which is retired when the user decides the new one. With \`id\`, change the fields that you give of an open rule. To change a decided rule, add a new rule that replaces it. Each set needs \`saidBy\`, the ID of the person who said it or user, and either \`source\`, the ID of the message that says it (see the \`thread\` tool), or \`words\`.
+- set with \`words\` in place of \`source\`: use it only when the user asks in the conversation to record a rule. Give his words as he wrote them, and \`saidBy\` user. The rule is decided at once, and the rule that it replaces is retired.
 - list: the rules, only those of \`kind\` when you give it.
-Each rule prints as \`<id> <name> (<kind>, <status>): <value> [said by <author> in message <source>]\`, where the status is ${oneOf(RULE_STATES)} and the author is \`user\` or \`<name> (<id>)\`. A rule of the user has no source.`;
+Each rule prints as \`<id> <name> (<kind>, <status>): <value> [said by <author> in message <source>]\` or \`[said by user: "<words>"]\`, where the status is ${oneOf(RULE_STATES)} and the author is \`user\` or \`<name> (<id>)\`. A rule of the user has no source.`;
 
 export const PARLEY_TOOL_DESCRIPTION = `Put questions to the user as asks, alone or in a parley: a group of asks with a slug, a title, a goal, evidence and a design sense.
 Before you ask, read the vault on the topic. Write the view of each ask with show-me, with wiki links to the notes that the vault already holds. When the user answers an ask and \`VAULT\` names a folder that exists, you get the todo \`Save to the vault: <title>\`. Ask your next question first, and do the todo while the user decides: write the view and the decision into the vault, with an update of a note that exists when you can. Give the note an \`id\` in its front matter, and record that ID with \`note\` (or \`harness parley note\`): this closes the todo. When nothing is worth a note, set the todo to dropped with the \`todo\` tool, and say why in one line.
-- round: add the asks \`asks\`. With \`slug\`, they serve the parley \`slug\`: a new slug needs \`title\` and \`goal\`, and \`title\`, \`goal\`, \`evidence\` and \`design_sense\` change an open parley. With \`slug\` of an open parley, \`asks\` can be left out when the round changes one of these fields. With \`item\` and \`slug\`, the parley shapes the open work item \`item\`.
+- round: add the asks \`asks\`. With \`slug\`, they serve the parley \`slug\`: a new slug needs \`title\` and \`goal\`, and \`title\`, \`goal\`, \`evidence\` and \`design_sense\` change an open parley. With \`slug\` of an open parley, \`asks\` can be left out when the round changes one of these fields. With \`item\` and \`slug\`, the parley shapes the open work item \`item\`. To fix an open ask of the parley, give \`ask\`, its number, in that entry of \`asks\`: the entry replaces the title, kind, tension, options, plan and view of the ask, and the ask keeps its number. The other entries are new asks.
 - answer: write the answers of the user, \`answers\`, each to the ask \`ask\`: the key of an option, ok, or own with the \`label\` that the user gave it, and \`words\`, the exact words of the user. The answer ok to the read-back of a parley, its ask with no options, makes the parley a contract a moment after the answer, and adds a work item with the title of the parley when the contract shapes no item: read the parley to see them.
 - drop: drop the open ask \`ask\`.
 - note: record \`note\`, the ID of the note in the vault that explains the ask \`ask\`, in any state. Only the asker of the ask records its note, and a second note replaces the first.
@@ -127,6 +128,7 @@ export function projectToolSchemas(typebox: Pick<typeof TypeBox, "Type">) {
 			}),
 		),
 		source: id("set: the ID of the message that says it"),
+		words: text("set: the exact words of the user that say the rule, in place of source"),
 	};
 
 	const thread = {
@@ -198,6 +200,12 @@ export function projectToolSchemas(typebox: Pick<typeof TypeBox, "Type">) {
 			asks: Type.Optional(
 				Type.Array(
 					Type.Object({
+						ask: Type.Optional(
+							Type.Integer({
+								minimum: 1,
+								description: "The number of the open ask of the parley that this ask replaces",
+							}),
+						),
 						title: Type.String({ pattern: "\\S", description: PLAIN_RULE }),
 						kind: Type.Optional(Type.Enum(ASK_KINDS)),
 						tension: Type.Optional(Type.String({ description: PLAIN_RULE })),
@@ -393,11 +401,7 @@ async function runRuleTool(args: Static<ProjectSchemas["rule"]["parameters"]>, s
 		case "set": {
 			const { id, ...rest } = args;
 
-			const said = {
-				...rest,
-				saidBy: required(args.saidBy, "saidBy", action),
-				source: required(args.source, "source", action),
-			};
+			const said = { ...rest, saidBy: required(args.saidBy, "saidBy", action) };
 
 			const fields =
 				id === undefined
