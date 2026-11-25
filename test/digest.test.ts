@@ -9,8 +9,8 @@ import { errorMessage } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { digestHook } from "../src/projects/digest.ts";
+import { addItem as writeItem } from "../src/projects/items.ts";
 import { ProjectStore } from "../src/projects/project-store.ts";
-import { holdAction } from "../src/projects/project.ts";
 import { DigestReply } from "../src/protocol/project.ts";
 import { models, newHost, root, send, setUp, tearDown } from "./helpers.ts";
 
@@ -54,9 +54,7 @@ describe("the digest", () => {
 
 		try {
 			const conversation = await harness.root(BACKGROUND_CONTEXT);
-			const agent = String(conversation.id);
-			const call = { requestId: "call-1", agent, tool: "bash", command: "git push", reason: "No go." };
-			store.write((tx) => holdAction(tx, call));
+			store.write((tx) => writeItem(tx, { title: "Ship" }, "cli"));
 			const warnings: string[] = [];
 			const degraded = new Degraded((cause) => warnings.push(errorMessage(cause)));
 			const host = { harness, store, host: "digest-failed", degraded };
@@ -75,7 +73,7 @@ describe("the digest", () => {
 			const written: InputWrite[] = [];
 			await runHook(hook, storage, conversation, async (write) => void written.push(write));
 			expect(written).toEqual([
-				expect.objectContaining({ key: expect.stringMatching(/^1:/), data: { waits: [], held: [1], items: [] } }),
+				expect.objectContaining({ key: expect.stringMatching(/^1:/), data: { waits: [], items: [1] } }),
 			]);
 			expect(host.degraded.list()).toEqual([]);
 		} finally {
@@ -93,8 +91,7 @@ describe("the digest", () => {
 		try {
 			const agent = { model: { provider: "faux", modelId: "faux-1" }, compaction: { keepRecentTokens: 0 } };
 			const conversation = await harness.root(BACKGROUND_CONTEXT, { agent });
-			const call = { requestId: "call-1", agent: String(conversation.id), tool: "bash", command: "ls", reason: "No." };
-			store.write((tx) => holdAction(tx, call));
+			store.write((tx) => writeItem(tx, { title: "Ship" }, "cli"));
 			const degraded = new Degraded(() => {});
 			const host = { harness, store, host: "digest-head", degraded };
 			const hook = digestHook(() => host);
@@ -139,7 +136,7 @@ describe("the digest", () => {
 			await send({ ...link, from: "item:2", to: "item:1" }, project);
 			await send({ ...link, from: "item:3", to: "item:2" }, project);
 
-			const tail = "waiting on: none\nheld: none";
+			const tail = "waiting on: none";
 			expect(await digestOf(project, "pi-1")).toBe(`board of ${project}: 3 open\n○ 1 Scope\n+2 later\n${tail}`);
 			expect(await digestOf(project, "pi-1")).toBeUndefined();
 			// A session with a new head of its context gets the same digest again, once.
@@ -168,7 +165,7 @@ describe("the digest", () => {
 			const shown = Array.from({ length: 10 }, (_, index) => `○ ${index + 1} Work ${index + 1}`);
 
 			expect(await digestOf(project, "pi-1")).toBe(
-				[`board of ${project}: 11 open`, ...shown, "+1 later", "waiting on: none", "held: none"].join("\n"),
+				[`board of ${project}: 11 open`, ...shown, "+1 later", "waiting on: none"].join("\n"),
 			);
 		} finally {
 			await host.close();

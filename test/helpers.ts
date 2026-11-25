@@ -314,7 +314,6 @@ export async function readStores(host: string): Promise<StoreFile> {
 			threads: store?.threads().map((thread) => ({ ...thread, messages: store.messages(thread.id) })) ?? [],
 			rules: store?.rules({}) ?? [],
 			lastRule: store?.lastRule() ?? 0,
-			held: store?.held() ?? [],
 			parleys: store?.parleys() ?? [],
 			asks: (await asks.read(harness, BACKGROUND_CONTEXT)).asks,
 			todos: (await todos.read(harness, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT)).todos,

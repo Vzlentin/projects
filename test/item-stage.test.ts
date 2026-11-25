@@ -4,7 +4,6 @@ import { setEntry } from "@vzlentin/harness/entries";
 import type { Host } from "@vzlentin/harness/host";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
-import { GateReply } from "../src/protocol/gate.ts";
 import { type EdgeKind, ItemList, type ItemState, StagedItem } from "../src/protocol/item.ts";
 import {
 	answer,
@@ -171,7 +170,7 @@ describe("the stage and the mark of the work items", { timeout: 60_000 }, () => 
 		await send({ type: "ask", action: "drop", caller: "cli", id: ask });
 	});
 
-	it("needs the user for an open ask or a held action of an agent that serves the item", async () => {
+	it("needs the user for an open ask of an agent that serves the item", async () => {
 		const item = await add("Agent asks");
 		const child = await spawnWithId("asking-session", { serves: { item: item.id } });
 		const other = await spawnWithId("other-session");
@@ -184,24 +183,6 @@ describe("the stage and the mark of the work items", { timeout: 60_000 }, () => 
 
 		await send({ type: "ask", action: "drop", caller: "cli", id: ask });
 		await send({ type: "ask", action: "drop", caller: "cli", id: elsewhere });
-		expect(await markOf(item.id)).toEqual({ stage: "building", needsYou: false });
-
-		const gated = Value.Parse(
-			GateReply,
-			await send({
-				type: "gate",
-				requestId: "stage-1",
-				caller: child.id,
-				tool: "bash",
-				arguments: { command: "harness rule decide 1" },
-				messages: [],
-			}),
-		);
-
-		if (gated.runs) throw new Error("the gate did not hold the call");
-		expect(await markOf(item.id)).toEqual({ stage: "building", needsYou: true });
-
-		await send({ type: "held", action: "drop", caller: "user", id: gated.held.id });
 		expect(await markOf(item.id)).toEqual({ stage: "building", needsYou: false });
 	});
 });

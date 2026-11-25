@@ -6,7 +6,6 @@ import { AGENT_HANDLE, statePaths } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { ProjectStore } from "../src/projects/project-store.ts";
-import { GateReply } from "../src/protocol/gate.ts";
 import { Message, Person, Rule, Thread } from "../src/protocol/project.ts";
 import { StoreFile } from "../src/protocol/store-file.ts";
 import {
@@ -75,20 +74,9 @@ async function fill(host: string): Promise<void> {
 			host,
 		);
 
-	const kept = Value.Parse(Rule, await rule("ask", asked.id));
+	await rule("ask", asked.id);
 	const gone = Value.Parse(Rule, await rule("wait", sent.id));
 	await send({ type: "rule", action: "delete", caller: "cli", id: gone.id }, host);
-
-	const gate = {
-		type: "gate",
-		requestId: "call-1",
-		caller: "agent",
-		tool: "bash",
-		arguments: { command: `projects rule decide ${kept.id}` },
-		messages: ["continue"],
-	} as const;
-
-	expect(Value.Parse(GateReply, await send(gate, host))).toMatchObject({ runs: false });
 
 	await send(
 		{
@@ -153,7 +141,7 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		// Into a store that never had a host.
 		expect(await load("load-new", path)).toEqual({
 			code: 0,
-			stdout: "persons: 2\nthreads: 2\nmessages: 5\nrules: 1\nheld: 1\nparleys: 1\noutbox: 4\nitems: 0\n",
+			stdout: "persons: 2\nthreads: 2\nmessages: 5\nrules: 1\nparleys: 1\noutbox: 4\nitems: 0\n",
 			stderr: "",
 		});
 
@@ -192,18 +180,16 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		}
 	});
 
-	it("writes into an empty project.sqlite, which keeps its ID counters and its deliveries", async () => {
+	it("writes into an empty project.sqlite, which keeps its ID counters", async () => {
 		await createHost("load-used");
 		const { dir } = statePaths("load-used");
 		await hostedFile("load-used");
-		const delivery = { key: "approve:1", target: "pi-1", text: "Approved.", at: 1 };
 		const rule = { name: "a", kind: "conduct", value: "A.", status: "open", saidBy: "user", at: 1, by: "cli" } as const;
 		const used = ProjectStore.open(dir, 0);
 
 		try {
 			used.write((tx) => {
 				for (let n = 0; n < 3; n++) tx.removeRule(tx.addRule(rule).id);
-				tx.addDelivery(delivery);
 			});
 		} finally {
 			used.close();
@@ -216,7 +202,6 @@ describe("projects store load", { timeout: 60_000 }, () => {
 
 		try {
 			expect(loaded.lastRule()).toBe(3);
-			expect(loaded.deliveries()).toEqual([delivery]);
 			expect(loaded.write((tx) => tx.addRule(rule)).id).toBe(4);
 		} finally {
 			loaded.close();
@@ -354,46 +339,10 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		expect(existsSync(join(dir, "project.sqlite.import"))).toBe(false);
 	});
 
-	it("loads a file of version 1 with its open todos moved to items, refuses one with a finished todo, and loads a file of version 2 with its items", async () => {
-		await createHost("load-v1");
-		await createHost("load-v2");
-		const { version: _version, items: _items, lastItem: _lastItem, ...lists } = Value.Create(StoreFile);
+	it("loads a file with its items, and the counter takes the highest ID of the items", async () => {
+		await createHost("load-items");
+		const lists = Value.Create(StoreFile);
 
-		const todos = [
-			{ id: 1, text: "Plan", state: "open" },
-			{ id: 3, text: "Ship", state: "doing" },
-		] as const;
-
-		// The todos that the move makes `dropped` are in their items, so they do not refuse the file.
-		const v1 = join(root, "load-v1.json");
-		await writeFile(v1, JSON.stringify({ ...lists, version: 1, todos }));
-		const loaded = await load("load-v1", v1);
-		expect(loaded).toMatchObject({ code: 0, stderr: "" });
-		expect(loaded.stdout).toContain("items: 2\n");
-		const moved = await hostedFile("load-v1");
-		const migrated = { state: "open", edges: [], at: expect.any(Number), by: "migration" };
-
-		expect(moved).toMatchObject({
-			version: 2,
-			todos: [],
-			items: [
-				{ id: 1, title: "Plan", ...migrated },
-				{ id: 3, title: "Ship", ...migrated },
-			],
-			lastItem: 3,
-		});
-
-		// A finished todo stays a todo after the move, so the file is refused.
-		await createHost("load-v1-done");
-		const done = join(root, "load-v1-done.json");
-		await writeFile(
-			done,
-			JSON.stringify({ ...lists, version: 1, todos: [...todos, { id: 2, text: "Old", state: "done" }] }),
-		);
-		expect(await load("load-v1-done", done)).toMatchObject({ code: 1, stdout: "" });
-		expect(existsSync(join(statePaths("load-v1-done").dir, "project.sqlite"))).toBe(false);
-
-		// A file of version 2: its open todo stays a todo, and the counter takes the highest ID of the items.
 		const edge = { from: "agent:7", kind: "serves", to: "item:2", at: 5, by: "cli" } as const;
 		const needs = { from: "item:3", kind: "needs", to: "item:2", at: 6, by: "cli" } as const;
 
@@ -402,18 +351,20 @@ describe("projects store load", { timeout: 60_000 }, () => {
 			{ id: 3, title: "Three", state: "open", edges: [needs], at: 6, by: "cli" },
 		] as const;
 
-		const v2 = join(root, "load-v2.json");
-		await writeFile(v2, JSON.stringify({ ...lists, version: 2, items, lastItem: 1 }));
-		expect(await load("load-v2", v2)).toMatchObject({ code: 0, stderr: "" });
-		expect(await hostedFile("load-v2")).toMatchObject({ items, lastItem: 3 });
+		const path = join(root, "load-items.json");
+		await writeFile(path, JSON.stringify({ ...lists, items, lastItem: 1 }));
+		expect(await load("load-items", path)).toMatchObject({ code: 0, stderr: "" });
+		expect(await hostedFile("load-items")).toMatchObject({ items, lastItem: 3 });
 
-		const host = await startHost("load-v2");
+		const host = await startHost("load-items");
 
 		try {
-			expect(await send({ type: "item", action: "add", caller: "cli", title: "Next" }, "load-v2")).toMatchObject({
+			expect(await send({ type: "item", action: "add", caller: "cli", title: "Next" }, "load-items")).toMatchObject({
 				id: 4,
 			});
-			expect(await send({ type: "item", action: "read", id: 2 }, "load-v2")).toMatchObject({ edges: [edge, needs] });
+			expect(await send({ type: "item", action: "read", id: 2 }, "load-items")).toMatchObject({
+				edges: [edge, needs],
+			});
 		} finally {
 			await host.close();
 		}
@@ -432,9 +383,14 @@ describe("projects store load", { timeout: 60_000 }, () => {
 		const cases = [
 			["not-json.json", "{", "not-json.json is not a store file: "],
 			[
-				"version.json",
-				JSON.stringify({ ...base, version: 3 }),
-				"has the version 3: projects store load reads only the versions 1 and 2",
+				"version-1.json",
+				JSON.stringify({ ...base, version: 1 }),
+				"has the version 1: projects store load reads only the version 3",
+			],
+			[
+				"version-2.json",
+				JSON.stringify({ ...base, version: 2 }),
+				"has the version 2: projects store load reads only the version 3",
 			],
 			["schema.json", JSON.stringify({ ...base, persons: [{ id: 1 }] }), "is not a store file: /persons/0"],
 			[

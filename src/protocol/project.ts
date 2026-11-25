@@ -1,6 +1,6 @@
 /**
- * The store of the project: persons, threads, messages, rules, held actions and parleys, their inputs, their lists and
- * the texts of their lines.
+ * The store of the project: persons, threads, messages, rules and parleys, their inputs, their lists and the texts of
+ * their lines.
  */
 import {
 	type Ask,
@@ -162,43 +162,6 @@ export const Rule = Type.Object({
 });
 
 export type Rule = Static<typeof Rule>;
-
-/**
- * The fields of each held action: the request ID of the call that the gate held, the caller that made it, its tool, its
- * command as it runs, the decided conduct rule that it breaks, absent when the gate failed or the call changes a rule,
- * and the reason. `at` is the time of its last change, and `by` is the caller of that change.
- */
-export const HeldFields = {
-	id: LocalId,
-	requestId: Type.String(),
-	agent: Caller,
-	tool: Type.String(),
-	command: Type.String(),
-	rule: Type.Optional(LocalId),
-	reason: Type.String(),
-	at: Time,
-	by: Caller,
-};
-
-/**
- * A tool call that the gate held, in one of its three states: `held` until the user approves or drops it, then `approved`
- * or `dropped`. Only an approved action has `ran`: the request ID of the one call that it let run,
- * and its time.
- */
-export const HeldAction = Type.Union([
-	Type.Object({ ...HeldFields, state: Type.Literal("held") }),
-	Type.Object({
-		...HeldFields,
-		state: Type.Literal("approved"),
-		ran: Type.Optional(Type.Object({ requestId: Type.String(), at: Time })),
-	}),
-	Type.Object({ ...HeldFields, state: Type.Literal("dropped") }),
-]);
-
-export type HeldAction = Static<typeof HeldAction>;
-
-/** The input of a new held action. */
-export type HeldInput = Pick<HeldAction, "requestId" | "agent" | "tool" | "command" | "rule" | "reason">;
 
 /** The rule of a plain text, as a request error and the parley tool give it. */
 
@@ -370,10 +333,6 @@ export type ThreadList = Static<typeof ThreadList>;
 export const RuleList = Type.Object({ rules: Type.Array(Rule) });
 
 export type RuleList = Static<typeof RuleList>;
-
-export const HeldList = Type.Object({ held: Type.Array(HeldAction) });
-
-export type HeldList = Static<typeof HeldList>;
 
 export const ParleyList = Type.Object({ parleys: Type.Array(Parley) });
 

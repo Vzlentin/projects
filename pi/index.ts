@@ -1,9 +1,9 @@
 /**
  * The `thread`, `rule`, `parley` and `item` tools of the store of the project, the digest and the rules section, the
- * `memory` tool and the memory section, `/rules`, the gate on the tool calls of the session, and `/drafts`, which copies
- * a draft of a thread and marks it sent. They use the modules of `@vzlentin/projects`, the dependency of this package,
- * from its built `dist/`, and the harness of that package, whose client starts the host of that install. The `.bin`
- * folder that holds its `projects` command goes last on `PATH`.
+ * `memory` tool and the memory section, `/rules`, and `/drafts`, which copies a draft of a thread and marks it sent.
+ * They use the modules of `@vzlentin/projects`, the dependency of this package, from its built `dist/`, and the harness
+ * of that package, whose client starts the host of that install. The `.bin` folder that holds its `projects` command
+ * goes last on `PATH`.
  */
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -11,7 +11,6 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { copyToClipboard, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerDrafts } from "./drafts.ts";
-import { registerGate } from "./gate.ts";
 import { registerMemory } from "./memory.ts";
 import { registerProject } from "./project.ts";
 import { registerRules } from "./rules.ts";
@@ -25,7 +24,6 @@ export type Projects = {
 	readonly memoryTool: typeof import("../src/memory-tool.ts");
 	readonly projectProtocol: typeof import("../src/protocol/project.ts");
 	readonly requests: typeof import("../src/protocol/requests.ts");
-	readonly gateProtocol: typeof import("../src/protocol/gate.ts");
 };
 
 const PROJECTS_PACKAGE = "@vzlentin/projects";
@@ -37,7 +35,6 @@ export default async function projectsExtension(pi: ExtensionAPI): Promise<void>
 	registerProject(pi, projects);
 	registerMemory(pi, projects);
 	registerRules(pi, projects);
-	registerGate(pi, projects);
 	registerDrafts(pi, projects, copyToClipboard);
 }
 
@@ -73,14 +70,13 @@ async function loadProjects(require: NodeJS.Require): Promise<Projects> {
 		`${PROJECTS_PACKAGE}/memory-tool`,
 		`${PROJECTS_PACKAGE}/protocol/project`,
 		`${PROJECTS_PACKAGE}/protocol/requests`,
-		`${PROJECTS_PACKAGE}/protocol/gate`,
 	];
 
-	const [client, tool, protocol, projectTool, memoryTool, projectProtocol, requests, gateProtocol] = await Promise.all(
+	const [client, tool, protocol, projectTool, memoryTool, projectProtocol, requests] = await Promise.all(
 		specifiers.map((specifier) => import(pathToFileURL(fromProjects.resolve(specifier)).href)),
 	);
 
 	// SAFETY: these are the built modules of the projects package and of its harness, whose declarations the `Projects`
 	// type comes from.
-	return { client, tool, protocol, projectTool, memoryTool, projectProtocol, requests, gateProtocol } as Projects;
+	return { client, tool, protocol, projectTool, memoryTool, projectProtocol, requests } as Projects;
 }

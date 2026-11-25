@@ -1,6 +1,6 @@
 /**
- * The watch of the store of a project: the persons, rules, threads with their waits, held actions, parleys, asks and
- * open work items with their stages, then an event with the objects that changed and the IDs of those that went, after
+ * The watch of the store of a project: the persons, rules, threads with their waits, parleys, asks and open work
+ * items with their stages, then an event with the objects that changed and the IDs of those that went, after
  * the writes and the commits that change them. A write of the project store gives the tables and the IDs that it
  * changed: the watch reads the objects again from the store.
  */
@@ -26,13 +26,10 @@ const context = BACKGROUND_CONTEXT;
 export type ProjectHost = StageHost &
 	Pick<EntryHandles, "workersChange" | "asks"> & {
 		readonly harness: Harness;
-		/**
-		 * The project store, with the persons, the rules, the threads, the messages, the held actions, the parleys and the
-		 * items.
-		 */
+		/** The project store, with the persons, the rules, the threads, the messages, the parleys and the items. */
 		readonly store: Pick<
 			ProjectStore,
-			"persons" | "rules" | "threads" | "outMessages" | "held" | "parleys" | "items" | "item" | "subscribe"
+			"persons" | "rules" | "threads" | "outMessages" | "parleys" | "items" | "item" | "subscribe"
 		>;
 		readonly degraded: Degraded;
 	};
@@ -40,7 +37,7 @@ export type ProjectHost = StageHost &
 /**
  * Opens a watch of the store of the project with the calls of the entry watch `options`, and returns the reply, with
  * every object. A pass runs at once, and its events wait for the reply. After it, each write of the project store that
- * changes a person, a rule, a thread, a message, a held action, a parley or an item, each commit that changes an ask, a
+ * changes a person, a rule, a thread, a message, a parley or an item, each commit that changes an ask, a
  * child, a started task or a task that ends, and each change of the degraded states of the host start a pass: the host
  * reads the objects again and
  * sends one `{ event: ProjectEvent }` with the objects that are new or changed, the IDs of those that went and every
@@ -74,7 +71,6 @@ export function projectEvent(before: ProjectState, after: ProjectState, all: boo
 		persons: changed(before.persons, after.persons, all),
 		rules: changed(before.rules, after.rules, all),
 		threads: changed(before.threads, after.threads, all),
-		held: changed(before.held, after.held, all),
 		parleys: changed(before.parleys, after.parleys, all),
 		asks: changed(before.asks, after.asks, all),
 		items: changed(before.items, after.items, all),
@@ -82,7 +78,6 @@ export function projectEvent(before: ProjectState, after: ProjectState, all: boo
 			persons: removed(before.persons, after.persons),
 			rules: removed(before.rules, after.rules),
 			threads: removed(before.threads, after.threads),
-			held: removed(before.held, after.held),
 			parleys: removed(before.parleys, after.parleys),
 			asks: removed(before.asks, after.asks),
 			// No request retires an item: an item that leaves `open` comes once with its state, and then no more.
@@ -95,7 +90,6 @@ export function projectEvent(before: ProjectState, after: ProjectState, all: boo
 		event.persons,
 		event.rules,
 		event.threads,
-		event.held,
 		event.parleys,
 		event.asks,
 		event.items,
@@ -115,8 +109,8 @@ class ProjectView implements StoreView<ProjectState, ProjectEvent> {
 	/** The IDs of the items that a commit changed since the last read, which the next read reads again. */
 	#freshItems = new Set<number>();
 	/**
-	 * Whether a parley, an ask, a held action, a child, a started task or a task that ends changed since the last read, so it works out every stage
-	 * again. The first read works out every stage.
+	 * Whether a parley, an ask, a child, a started task or a task that ends changed since the last read, so it works out
+	 * every stage again. The first read works out every stage.
 	 */
 	#allStages = true;
 
@@ -141,7 +135,6 @@ class ProjectView implements StoreView<ProjectState, ProjectEvent> {
 			persons: store.persons(),
 			rules: store.rules({}),
 			threads,
-			held: store.held(),
 			parleys: store.parleys(),
 			...asks,
 			items: await items,
@@ -169,7 +162,7 @@ class ProjectView implements StoreView<ProjectState, ProjectEvent> {
 	/**
 	 * The open items with their stages, in ID order, and the items that left `open` since the last read, once. The first
 	 * read lists the open items. A later read reads again the items that a write changed, and works out the stages of
-	 * those items, or of every open item after a change of a parley, an ask, a held action, a child, a started task or a task that ends.
+	 * those items, or of every open item after a change of a parley, an ask, a child, a started task or a task that ends.
 	 */
 	async #readItems(): Promise<StagedItem[]> {
 		const fresh = this.#freshItems;
@@ -206,7 +199,7 @@ class ProjectView implements StoreView<ProjectState, ProjectEvent> {
 
 	/**
 	 * Requests a pass at each change of the degraded states, and at each write of the project store that changes it. It
-	 * records the items that a write changes, and a change of a parley or a held action can change every stage.
+	 * records the items that a write changes, and a change of a parley can change every stage.
 	 */
 	triggers(request: () => void): () => void {
 		const degraded = this.#host.degraded.subscribe(request);
@@ -214,7 +207,7 @@ class ProjectView implements StoreView<ProjectState, ProjectEvent> {
 		const store = this.#host.store.subscribe((changes) => {
 			for (const change of changes) {
 				if (change.table === "item") this.#freshItems.add(change.id);
-				else if (change.table === "parley" || change.table === "held") this.#allStages = true;
+				else if (change.table === "parley") this.#allStages = true;
 			}
 
 			request();

@@ -7,7 +7,6 @@ import type { EntryHandles, EntryOpen } from "@vzlentin/harness/entry-api";
 import type { AnswerAuthorOf, AskRequest, Replies as HostReplies } from "@vzlentin/harness/protocol";
 import type { ProjectRequest, Replies } from "../protocol/requests.ts";
 import { nextDigest, recordDigest } from "./digest.ts";
-import { gateCall } from "./gate.ts";
 import { stageItem, stageItems } from "./item-stage.ts";
 import { addItem, linkItem, readItemBothWays, readItemWorkers, setItem, unlinkItem } from "./items.ts";
 import { answerMemory, type HostMemory } from "./memory.ts";
@@ -21,15 +20,12 @@ import {
 	writeAnswers,
 	writeRound,
 } from "./parleys.ts";
-import { sendDeliveries } from "./project-deliveries.ts";
 import { changeRule, setRule } from "./project-rules.ts";
 import type { ProjectStore } from "./project-store.ts";
 import {
 	addPerson,
 	addThread,
-	approveHeld,
 	deleteMessage,
-	dropHeld,
 	editMessage,
 	joinThread,
 	logMessage,
@@ -44,10 +40,8 @@ const context = BACKGROUND_CONTEXT;
 export type ProjectsHost = Pick<
 	EntryHandles,
 	| "host"
-	| "settings"
 	| "degraded"
 	| "warn"
-	| "classifier"
 	| "asks"
 	| "liveWorkers"
 	| "workers"
@@ -55,16 +49,11 @@ export type ProjectsHost = Pick<
 	| "workersChange"
 	| "stop"
 	| "stopAfterTurn"
-	| "endedChild"
-	| "deliver"
 > &
 	EntryOpen & {
 		/** The memory of the host agent, for the `memory` requests. */
 		readonly memory: HostMemory;
-		/**
-		 * The persons, the threads, the messages, the rules, the held actions, the parleys, the items with their edges and
-		 * the pending deliveries.
-		 */
+		/** The persons, the threads, the messages, the rules, the parleys and the items with their edges. */
 		readonly store: ProjectStore;
 	};
 
@@ -95,10 +84,6 @@ export async function handleProject(
 			return answerMemory(request, host.memory, signal);
 		case "rule":
 			return rule(request, host);
-		case "gate":
-			return gateCall(request, { ...host, signal });
-		case "held":
-			return held(request, host);
 		case "parley":
 			return parley(request, host);
 		case "item":
@@ -265,19 +250,4 @@ async function item(request: Extract<ProjectRequest, { type: "item" }>, host: Pr
 				store.write((tx) => unlinkItem(tx, request)),
 			);
 	}
-}
-
-/**
- * Approves or drops the held action of `request`. An approve by another caller than the agent of the action adds the
- * delivery that tells the agent, so that it calls the command again, and the request then sends the pending
- * deliveries (see `sendDeliveries`).
- */
-async function held(request: Extract<ProjectRequest, { type: "held" }>, host: ProjectsHost): Promise<Replies["held"]> {
-	const { id, caller } = request;
-
-	if (request.action === "drop") return host.store.write((tx) => dropHeld(tx, id, caller));
-	const approved = host.store.write((tx) => approveHeld(tx, id, caller));
-	await sendDeliveries(host);
-
-	return approved;
 }

@@ -22,7 +22,7 @@ const SIDE_FILES = ["", "-wal", "-shm", "-journal"];
  * and gives the count of each list. The persons, the threads, the messages, the rules, the parleys and the items keep
  * the IDs of the file. A failure leaves no `project.sqlite` when there was none. It fails before it writes when the
  * file is not a store file, when the file has asks or todos, when a host runs for `host`, or when a list of
- * `project.sqlite` is not empty. An empty `project.sqlite` keeps its ID counters and its deliveries.
+ * `project.sqlite` is not empty. An empty `project.sqlite` keeps its ID counters.
  */
 export async function loadStore(host: string, path: string): Promise<StoreCounts> {
 	const file = parseStoreFile(path);
@@ -87,11 +87,11 @@ async function loadNewStore(dir: string, file: StoreFile): Promise<void> {
 }
 
 /**
- * Writes the persons, the threads with their messages, the rules, the held actions, the parleys and the items with
- * their edges of `file` into `store` in one transaction, with the IDs of the file. A failure rolls `store` back. The
- * write tells no listener. A rule with a source gets the thread of its source message. The highest ID that a rule had
- * becomes `lastRule`, and the highest ID that an item had `lastItem`, when it is higher. It always writes the counter
- * of the IDs of items.
+ * Writes the persons, the threads with their messages, the rules, the parleys and the items with their edges of
+ * `file` into `store` in one transaction, with the IDs of the file. A failure rolls `store` back. The write tells no
+ * listener. A rule with a source gets the thread of its source message. The highest ID that a rule had becomes
+ * `lastRule`, and the highest ID that an item had `lastItem`, when it is higher. It always writes the counter of the
+ * IDs of items.
  */
 async function writeStoreFile(store: ProjectStore, file: StoreFile): Promise<void> {
 	await store.transaction(async (tx) => {
@@ -113,7 +113,6 @@ async function writeStoreFile(store: ProjectStore, file: StoreFile): Promise<voi
 			tx.addRule(thread === undefined ? rule : { ...rule, thread });
 		}
 
-		for (const held of file.held) tx.addHeld(held);
 		tx.raiseLastRule(file.lastRule);
 
 		for (const parley of file.parleys) tx.addParley(parley);
@@ -133,9 +132,9 @@ function hasHostLists(file: StoreFile): boolean {
 	);
 }
 
-/** Whether each list of `store` is empty. Its ID counters and its deliveries do not count. */
+/** Whether each list of `store` is empty. Its ID counters do not count. */
 function isEmpty(store: StoreReader): boolean {
-	const lists = [store.persons(), store.threads(), store.rules({}), store.held(), store.parleys(), store.items()];
+	const lists = [store.persons(), store.threads(), store.rules({}), store.parleys(), store.items()];
 
 	return lists.every((list) => list.length === 0);
 }

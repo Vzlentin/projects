@@ -1,17 +1,16 @@
 /**
- * The store file, such as `store.json`: the lists of the store of a project, which `projects store load` writes into
- * `project.sqlite`. A file of version 1 has no items: its parse moves its open todos to items.
+ * The store file, a JSON file of version 3: the lists of the store of a project, which `projects store load` writes into
+ * `project.sqlite`. `store load` refuses a file of another version.
  */
 import { readFileSync } from "node:fs";
 import { Todo, refParts, errorMessage, Ask, Parley } from "@vzlentin/harness/protocol";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { moveTodos } from "./item-move.ts";
 import { edgeItem, edgeLine, WorkItem } from "./item.ts";
-import { HeldAction, Message, Person, Rule, Thread } from "./project.ts";
+import { Message, Person, Rule, Thread } from "./project.ts";
 
-/** The version of the shape of `store.json`. */
-export const STORE_FILE_VERSION = 2;
+/** The version of the shape of a store file. */
+export const STORE_FILE_VERSION = 3;
 
 /** The last change of the state of a message out: its time, and the caller of the change. */
 export const StateChange = Type.Object({ at: Message.properties.at, by: Message.properties.by });
@@ -34,27 +33,21 @@ export const FileMessage = Type.Union([
 export type FileMessage = Static<typeof FileMessage>;
 
 /**
- * The lists of a store file of version 1: the persons, the threads with their messages, oldest first, the rules and the
- * highest ID that a rule had, the held actions, the parleys, the asks, the todos of the project agent, and the todos of
- * each caller that is not a conversation of the host, in caller order. The state of each message out is in its message.
+ * The lists of the store: the persons, the threads with their messages, oldest first, the rules and the highest ID that
+ * a rule had, the parleys, the asks, the todos of the project agent, the todos of each caller that is not a
+ * conversation of the host, in caller order, the items, each with its edges, and the highest ID that an item had. The
+ * state of each message out is in its message.
  */
-export const StoreFileV1 = Type.Object({
-	version: Type.Literal(1),
+export const StoreFile = Type.Object({
+	version: Type.Literal(STORE_FILE_VERSION),
 	persons: Type.Array(Person),
 	threads: Type.Array(Type.Object({ ...Thread.properties, messages: Type.Array(FileMessage) })),
 	rules: Type.Array(Rule),
 	lastRule: Type.Integer({ minimum: 0 }),
-	held: Type.Array(HeldAction),
 	parleys: Type.Array(Parley),
 	asks: Type.Array(Ask),
 	todos: Type.Array(Todo),
 	callerTodos: Type.Array(Type.Object({ caller: Type.String(), todos: Type.Array(Todo) })),
-});
-
-/** The lists of the store: those of version 1, the items, each with its edges, and the highest ID that an item had. */
-export const StoreFile = Type.Object({
-	...StoreFileV1.properties,
-	version: Type.Literal(STORE_FILE_VERSION),
 	items: Type.Array(WorkItem),
 	lastItem: Type.Integer({ minimum: 0 }),
 });
@@ -67,7 +60,6 @@ export type StoreCounts = {
 	threads: number;
 	messages: number;
 	rules: number;
-	held: number;
 	parleys: number;
 	/** The messages out, each with its state in the outbox. */
 	outbox: number;
@@ -77,11 +69,10 @@ export type StoreCounts = {
 const Versioned = Type.Object({ version: Type.Unknown() });
 
 /**
- * The store file at `path`, as a file of version 2. It fails with one line when the file is not JSON, has another
- * version than 1 and 2, does not match the schema, has an ID twice in one list (the messages of all threads are one
+ * The store file at `path`. It fails with one line when the file is not JSON, has another version than
+ * `STORE_FILE_VERSION`, does not match the schema, has an ID twice in one list (the messages of all threads are one
  * list), has a caller twice in `callerTodos`, or has a reference that does not resolve: a message that is not in the
- * thread that it names, a rule whose source is no message of the file, or an edge that is not an edge of its item. A
- * file of version 1 gets the items of its open todos, with the rule of the move of the first start of a host.
+ * thread that it names, a rule whose source is no message of the file, or an edge that is not an edge of its item.
  */
 export function parseStoreFile(path: string): StoreFile {
 	let value: unknown;
@@ -92,36 +83,25 @@ export function parseStoreFile(path: string): StoreFile {
 		throw new Error(`${path} is not a store file: ${errorMessage(error)}`, { cause: error });
 	}
 
-	if (Value.Check(Versioned, value) && value.version !== 1 && value.version !== STORE_FILE_VERSION) {
+	if (Value.Check(Versioned, value) && value.version !== STORE_FILE_VERSION) {
 		throw new Error(
-			`${path} has the version ${JSON.stringify(value.version)}: projects store load reads only the versions 1 and ${STORE_FILE_VERSION}`,
+			`${path} has the version ${JSON.stringify(value.version)}: projects store load reads only the version ${STORE_FILE_VERSION}`,
 		);
 	}
 
-	const schema = Value.Check(Versioned, value) && value.version === 1 ? StoreFileV1 : StoreFile;
-
-	if (!Value.Check(schema, value)) {
-		const [error] = Value.Errors(schema, value);
+	if (!Value.Check(StoreFile, value)) {
+		const [error] = Value.Errors(StoreFile, value);
 
 		throw new Error(
 			`${path} is not a store file: ${[error?.instancePath, error?.message].filter((part) => part).join(" ")}`,
 		);
 	}
 
-	const file = value.version === 1 ? fromVersion1(value) : value;
-
-	const broken = brokenReference(file);
+	const broken = brokenReference(value);
 
 	if (broken !== undefined) throw new Error(`${path} is not a store file: ${broken}`);
 
-	return file;
-}
-
-/** `file`, a store file of version 1, as a file of version 2: its open todos moved to items. */
-function fromVersion1(file: Static<typeof StoreFileV1>): StoreFile {
-	const { todos, items, last } = moveTodos(file.todos, Date.now());
-
-	return { ...file, version: STORE_FILE_VERSION, todos, items, lastItem: last };
+	return value;
 }
 
 /** The first value of `values` that is there twice, or undefined when each one is there once. */
@@ -145,7 +125,6 @@ function duplicateId(file: StoreFile): string | undefined {
 		["threads", ids(file.threads)],
 		["messages", file.threads.flatMap((thread) => ids(thread.messages))],
 		["rules", ids(file.rules)],
-		["held", ids(file.held)],
 		["parleys", ids(file.parleys)],
 		["asks", ids(file.asks)],
 		["todos", ids(file.todos)],
@@ -277,7 +256,6 @@ export function storeCounts(file: StoreFile): StoreCounts {
 		threads: file.threads.length,
 		messages: file.threads.reduce((sum, thread) => sum + thread.messages.length, 0),
 		rules: file.rules.length,
-		held: file.held.length,
 		parleys: file.parleys.length,
 		outbox: file.threads.reduce(
 			(sum, thread) => sum + thread.messages.filter((message) => message.direction === "out").length,

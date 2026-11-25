@@ -53,7 +53,7 @@ describe("projects rule", { timeout: 60_000 }, () => {
 			stderr: "",
 		});
 
-		// The CLI takes the action only right after `rule`, so a change that the pattern of the gate misses does not run.
+		// The CLI takes the action only right after `rule`.
 		const early = await projects(["rule", "--kind", "domain", "edit", String(rule.id)]);
 		expect(early).toMatchObject({ code: 1, stdout: "", stderr: expect.stringMatching(/^Usage:/) });
 		expect(await rules()).toMatchObject([{ id: rule.id, kind: "conduct", status: "open" }]);

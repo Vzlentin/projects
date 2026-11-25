@@ -2,17 +2,16 @@
 import { DegradedState, LocalId, StoreId, Ask, Parley } from "@vzlentin/harness/protocol";
 import { type Static, Type } from "typebox";
 import { StagedItem } from "./item.ts";
-import { HeldAction, Person, ProjectThread, Rule } from "./project.ts";
+import { Person, ProjectThread, Rule } from "./project.ts";
 
 /**
- * The reply of `watch-project`: every person, rule, thread with its waits, held action, parley and ask, in ID order,
- * the open work items with their stages, in ID order, and the degraded states of the host, oldest first.
+ * The reply of `watch-project`: every person, rule, thread with its waits, parley and ask, in ID order, the open work
+ * items with their stages, in ID order, and the degraded states of the host, oldest first.
  */
 export const ProjectState = Type.Object({
 	persons: Type.Array(Person),
 	rules: Type.Array(Rule),
 	threads: Type.Array(ProjectThread),
-	held: Type.Array(HeldAction),
 	parleys: Type.Array(Parley),
 	asks: Type.Array(Ask),
 	items: Type.Array(StagedItem),
@@ -32,7 +31,6 @@ export const ProjectEvent = Type.Object({
 		persons: Type.Array(LocalId),
 		rules: Type.Array(LocalId),
 		threads: Type.Array(StoreId),
-		held: Type.Array(LocalId),
 		parleys: Type.Array(LocalId),
 		asks: Type.Array(LocalId),
 		items: Type.Array(LocalId),

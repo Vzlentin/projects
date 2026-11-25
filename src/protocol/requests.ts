@@ -3,12 +3,10 @@ import type { JsonValue } from "@earendil-works/chord/json";
 import { LocalId, type Parley, type ParleyAsks, ParleyEnd, Slug } from "@vzlentin/harness/protocol";
 import { type Static, type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
-import { GateReply, ToolArguments } from "./gate.ts";
 import { type Edge, EdgeInput, ItemAdd, type ItemList, ItemSet, ItemState, type StagedItem } from "./item.ts";
 import type { ProjectState } from "./project-watch.ts";
 import {
 	type DigestReply,
-	type HeldAction,
 	type MemoryReply,
 	type Message,
 	MessageDelete,
@@ -38,7 +36,7 @@ import {
 
 /**
  * One request line of a type that the projects entry serves: the persons, threads, messages, digests, memory, rules,
- * parleys, items, gate, held actions and the watch of the project. The entry checks it with the branches of its type.
+ * parleys, items and the watch of the project. The entry checks it with the branches of its type.
  */
 export const ProjectRequestLine = Type.Union([
 	/** Adds a person, and replies with it. */
@@ -89,9 +87,9 @@ export const ProjectRequestLine = Type.Union([
 		...MessageDelete.properties,
 	}),
 	/**
-	 * Replies with the digest of `caller`, the messages out that wait and its held actions, when it changed since the
-	 * last digest of the caller or when `head`, the ID of the newest compaction of its context, is new, and records it as
-	 * given. A Pi session sends it before each turn, with the ID of its newest compaction entry as `head`.
+	 * Replies with the digest of `caller` and the messages out that wait, when it changed since the last digest of the
+	 * caller or when `head`, the ID of the newest compaction of its context, is new, and records it as given. A Pi
+	 * session sends it before each turn, with the ID of its newest compaction entry as `head`.
 	 */
 	Type.Object({ type: Type.Literal("digest"), caller: Type.String(), head: Type.Optional(Type.String()) }),
 	/** Saves `text` as a memory of the host agent, and replies with the `Saved as #<N>.` line of OptMem. */
@@ -214,27 +212,7 @@ export const ProjectRequestLine = Type.Union([
 		...EdgeInput.properties,
 	}),
 	/**
-	 * Checks the call of the tool `tool` with `arguments` by the agent `caller` against the decided conduct rules of the
-	 * project, with `messages`, the last messages of the user in the conversation of the caller, oldest first. It replies
-	 * that the call runs, or holds it. A held or dropped call with the same caller and `requestId` is given again.
-	 */
-	Type.Object({
-		type: Type.Literal("gate"),
-		requestId: Type.String(),
-		caller: Type.String(),
-		tool: Type.String(),
-		arguments: ToolArguments,
-		messages: Type.Immutable(Type.Array(Type.String())),
-	}),
-	/** Approves or drops the held action `id`, and replies with it. An approve tells its agent. */
-	Type.Object({
-		type: Type.Literal("held"),
-		action: Type.Union([Type.Literal("approve"), Type.Literal("drop")]),
-		caller: Type.String(),
-		id: LocalId,
-	}),
-	/**
-	 * Replies with the persons, rules, threads with their waits, held actions, parleys and asks of the project, then
+	 * Replies with the persons, rules, threads with their waits, parleys and asks of the project, then
 	 * sends one `{ event: ProjectEvent }` line after the commits that change them. It needs a connection.
 	 */
 	Type.Object({ type: Type.Literal("watch-project") }),
@@ -255,8 +233,6 @@ export type Replies = {
 	readonly memory: MemoryReply;
 	/** The rule of `set`, `decide`, `retire`, `delete`, `edit` and `create`, or the rules of `list`. */
 	readonly rule: Rule | RuleList;
-	readonly gate: GateReply;
-	readonly held: HeldAction;
 	/** The parley and its asks of `take` and `read`, the parley of `end`, or the parleys of `list`. */
 	readonly parley: ParleyAsks | Parley | ParleyList;
 	/** The item of `add`, `set`, `read` and `unlink`, the items of `list`, each with its stage, or the edge of `link`. */

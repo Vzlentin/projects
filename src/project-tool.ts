@@ -75,7 +75,6 @@ export const THREAD_TOOL_DESCRIPTION = `Read and write the threads of messages b
 - log: add a message that the person \`from\` wrote in the thread \`thread\`, with \`text\`, and \`at\` when you know it. It moves each earlier draft of the thread to sent, and each sent message to answered.
 - draft: add a draft of the user to the persons of the thread \`thread\`, with \`text\`. It sends nothing.
 - mark: set the state of the draft or sent message \`message\` to \`state\`: sent when the user sent it, draft when it was not sent, dropped when it will not go.
-When you send a draft yourself, put \`draft:<id>\` in the command, such as the shell comment \`# draft:12\`: the draft is sent once the call runs.
 A person prints as \`<name> (<id>)\`: its ID is the \`from\` of \`log\`, and the \`saidBy\` of a rule.`;
 
 export const RULE_TOOL_DESCRIPTION = `Keep the rules of the project. A conduct rule says how to act. A domain rule says what is true for the project. You propose a rule; only the user puts it in effect, with a decide or with his own words.

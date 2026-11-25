@@ -1,6 +1,6 @@
 # projects
 
-The project store of the harness stack: persons, threads, rules, parleys, work items, the gate and the digest, as an entry of a [harness](https://github.com/Vzlentin/harness) host.
+The project store of the harness stack: persons, threads, rules, parleys, work items and the digest, as an entry of a [harness](https://github.com/Vzlentin/harness) host.
 It is part of the harness stack, with [harness](https://github.com/Vzlentin/harness) and [workflows](https://github.com/Vzlentin/workflows).
 
 ## Install
@@ -41,7 +41,6 @@ To update with Pi: `pi update --extensions`, then `/reload`. The stack releases 
 - The `thread`, `rule`, `parley` and `item` tools, and the `memory` tool, in each Pi session.
 - The digest of the session before each turn, and the decided rules and the memory of the host agent in the system prompt.
 - `/rules`: list the rules of the project, and decide, retire, edit, create or delete one.
-- The gate: each tool call that is not a read goes to the gate of the host first. A held call waits for your answer.
 - `/drafts`: copy a draft of a thread to the clipboard, and mark it sent.
 - The `parley` skill: the conduct of a parley with the `parley` tool.
 

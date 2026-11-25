@@ -1,11 +1,9 @@
 /**
- * The objects of the project that its requests change: the persons, the threads, the messages and the held actions.
+ * The objects of the project that its requests change: the persons, the threads and the messages.
  * They are in the project store (`project-store.ts`), and each function writes them in the transaction of a write. The
  * rules are in `project-rules.ts`, the parleys in `parleys.ts` and the items in `items.ts`.
  */
 import {
-	type HeldAction,
-	type HeldInput,
 	type Message,
 	type MessageDelete,
 	type MessageEdit,
@@ -20,7 +18,6 @@ import {
 	type ThreadMessages,
 } from "../protocol/project.ts";
 import type { FileMessage } from "../protocol/store-file.ts";
-import { approveDelivery, approveKey } from "./project-deliveries.ts";
 import { releaseSource } from "./project-rules.ts";
 import { knownAuthor, replyMessage, type StoreReader, type StoreTx } from "./project-store.ts";
 
@@ -154,115 +151,7 @@ export function markMessage(tx: StoreTx, input: MessageMarkInput, by: string): M
 	return replyMessage(marked);
 }
 
-/**
- * Marks each message out of `ids` that the mark `sent` can change as sent by the caller `by`. An ID of another message,
- * or of no message, changes nothing.
- */
-export function markSent(tx: StoreTx, ids: readonly number[], by: string): void {
-	const at = Date.now();
-
-	for (const out of tx.outMessages()) {
-		const state = ids.includes(out.id) ? messageTransition(out.state, "sent") : undefined;
-
-		if (state !== undefined) tx.putMessage({ ...out, state, changed: { at, by } });
-	}
-}
-
-/**
- * Holds the call `input` of its agent with the state `held`, and gives the held action. A held or dropped action of the
- * same agent and request ID is given again, and no action is added.
- */
-export function holdAction(tx: StoreTx, input: HeldInput): HeldAction {
-	const found = heldFor(tx.held(), input.agent, input.requestId);
-
-	if (found !== undefined) return found;
-
-	return tx.addHeld({ ...input, state: "held", at: Date.now(), by: input.agent });
-}
-
-/** The call that an approved action can run for. */
-type RunCall = Pick<HeldInput, "agent" | "tool" | "command" | "requestId">;
-
-/**
- * Approves the held action `id` for the caller `by`, and gives it. An action that is not held fails. When `by` is not
- * the agent of the action, the same write adds the delivery that tells the agent: an agent that approves its own action,
- * such as a Pi session with a UI, calls it again by itself.
- */
-export function approveHeld(tx: StoreTx, id: number, by: string): HeldAction {
-	const approved = decide(tx, id, { state: "approved", by });
-
-	if (by !== approved.agent) tx.addDelivery(approveDelivery(approved));
-
-	return approved;
-}
-
-/** Drops the held action `id` for the caller `by`, and gives it. An action that is not held fails. */
-export function dropHeld(tx: StoreTx, id: number, by: string): HeldAction {
-	return decide(tx, id, { state: "dropped", by });
-}
-
-/**
- * Drops each action of `agent` in the state `held`, for the caller `agent`, and gives the dropped actions. A repeat
- * changes nothing.
- */
-export function dropHeldOf(tx: StoreTx, agent: string): HeldAction[] {
-	return tx
-		.held()
-		.filter((found) => found.state === "held" && found.agent === agent)
-		.map((found) => decide(tx, found.id, { state: "dropped", by: agent }));
-}
-
-/**
- * Marks the approved action of the call `call` as run by it, and gives it: the action of the same agent, tool and
- * command that ran for no call, or for this call. The first run removes the delivery of its approve. With no such
- * action, it gives `undefined` and changes nothing.
- */
-export function runApproved(tx: StoreTx, call: RunCall): HeldAction | undefined {
-	const found = tx.held().find((held) => runsFor(held, call));
-
-	if (found === undefined || found.ran !== undefined) return found;
-	const ran: HeldAction = { ...found, ran: { requestId: call.requestId, at: Date.now() } };
-	tx.putHeld(ran);
-	tx.removeDelivery(approveKey(found.id));
-
-	return ran;
-}
-
-/**
- * Whether the held action `held` is approved for the agent, tool and command of `call`, and lets it run: it ran for no
- * call, or for this one.
- */
-function runsFor(held: HeldAction, call: RunCall): held is Extract<HeldAction, { readonly state: "approved" }> {
-	return (
-		held.state === "approved" &&
-		held.agent === call.agent &&
-		held.tool === call.tool &&
-		held.command === call.command &&
-		(held.ran === undefined || held.ran.requestId === call.requestId)
-	);
-}
-
-/** The held or dropped action of the call `requestId` of `agent`. */
-export function heldFor(held: readonly HeldAction[], agent: string, requestId: string): HeldAction | undefined {
-	return held.find((found) => found.state !== "approved" && found.agent === agent && found.requestId === requestId);
-}
-
 /** The thread `id` and its messages, oldest first. */
 export function readThread(store: StoreReader, id: number): ThreadMessages {
 	return { thread: store.thread(id), messages: store.messages(id).map(replyMessage) };
-}
-
-/** Sets the held action `id` to the decision `decision`, and gives it. An action that is not held fails. */
-function decide(
-	tx: StoreTx,
-	id: number,
-	decision: Pick<Extract<HeldAction, { readonly state: "approved" | "dropped" }>, "state" | "by">,
-): HeldAction {
-	const found = tx.heldAction(id);
-
-	if (found.state !== "held") throw new Error(`Held action ${id} is ${found.state}, not held`);
-	const decided: HeldAction = { ...found, ...decision, at: Date.now() };
-	tx.putHeld(decided);
-
-	return decided;
 }

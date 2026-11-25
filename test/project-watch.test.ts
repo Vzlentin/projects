@@ -14,7 +14,7 @@ import { sessionDoc } from "../src/projects/project-docs.ts";
 import { projectEvent } from "../src/projects/project-watch.ts";
 import { StagedItem } from "../src/protocol/item.ts";
 import { ProjectEvent, ProjectState } from "../src/protocol/project-watch.ts";
-import { type HeldAction, Message, Person, Rule, Thread } from "../src/protocol/project.ts";
+import { Message, Person, Rule, Thread } from "../src/protocol/project.ts";
 import { cli, models, newHost, openDurableHost, root, send, setUp, tearDown, until, watchProject } from "./helpers.ts";
 
 /** The documents of the terms and of the parts of the vault, as an older version kept them in the store. */
@@ -25,7 +25,6 @@ const NONE: ProjectEvent["removed"] = {
 	persons: [],
 	rules: [],
 	threads: [],
-	held: [],
 	parleys: [],
 	asks: [],
 	items: [],
@@ -37,7 +36,6 @@ function event(changes: Partial<ProjectEvent>): ProjectEvent {
 		persons: [],
 		rules: [],
 		threads: [],
-		held: [],
 		parleys: [],
 		asks: [],
 		items: [],
@@ -68,7 +66,6 @@ describe("watch-project", { timeout: 60_000 }, () => {
 				persons: [],
 				rules: [],
 				threads: [],
-				held: [],
 				parleys: [],
 				asks: [],
 				items: [],
@@ -181,7 +178,6 @@ describe("watch-project", { timeout: 60_000 }, () => {
 				persons: [sam],
 				rules: [decided],
 				threads: [{ ...thread, last: draft.at, waits: [sent] }],
-				held: [],
 				parleys: [],
 				asks: [],
 				items: [],
@@ -270,7 +266,6 @@ describe("watch-project", { timeout: 60_000 }, () => {
 				persons: [sam],
 				rules: [rule],
 				threads: [{ ...thread, last: asked.at, waits: [] }],
-				held: [],
 				parleys: [],
 				asks: [],
 				items: [],
@@ -633,7 +628,7 @@ describe("watch-project", { timeout: 60_000 }, () => {
 		}
 	});
 
-	it("gives the messages that stopped waiting, the held actions that changed, the IDs of the objects that went, and no event when nothing changed", () => {
+	it("gives the messages that stopped waiting, the IDs of the objects that went, and no event when nothing changed", () => {
 		const sam = { id: 1, name: "Sam" };
 		const rufin = { id: 2, name: "Rufin" };
 
@@ -649,16 +644,11 @@ describe("watch-project", { timeout: 60_000 }, () => {
 		};
 
 		const thread = { id: 3, topic: "Scope", persons: [1, 2], last: 1_000 };
-		const call = { requestId: "call-1", agent: "7", tool: "bash", rule: 1, reason: "It breaks rule 1.", at: 1_000 };
-		const push: HeldAction = { ...call, id: 1, command: "git push", state: "held", by: "7" };
-		const merge: HeldAction = { ...call, id: 2, command: "glab mr merge 6", state: "held", by: "7" };
-		const approved: HeldAction = { ...push, state: "approved", at: 2_000, by: "user" };
 
 		const before: ProjectState = {
 			persons: [sam, rufin],
 			rules: [],
 			threads: [{ ...thread, waits: [draft] }],
-			held: [push, merge],
 			parleys: [],
 			asks: [],
 			items: [],
@@ -669,7 +659,6 @@ describe("watch-project", { timeout: 60_000 }, () => {
 			persons: [sam],
 			rules: [],
 			threads: [{ ...thread, waits: [] }],
-			held: [approved],
 			parleys: [],
 			asks: [],
 			items: [],
@@ -679,14 +668,11 @@ describe("watch-project", { timeout: 60_000 }, () => {
 		expect(projectEvent(before, after, false)).toEqual(
 			event({
 				threads: [{ ...thread, waits: [] }],
-				held: [approved],
-				removed: { ...NONE, persons: [2], held: [2] },
+				removed: { ...NONE, persons: [2] },
 			}),
 		);
 		expect(projectEvent(after, after, false)).toBeUndefined();
-		expect(projectEvent(after, after, true)).toEqual(
-			event({ persons: [sam], threads: [{ ...thread, waits: [] }], held: [approved] }),
-		);
+		expect(projectEvent(after, after, true)).toEqual(event({ persons: [sam], threads: [{ ...thread, waits: [] }] }));
 	});
 
 	it("gives an event when only the degraded states change, with every degraded state, and none when they are equal", () => {
@@ -694,7 +680,6 @@ describe("watch-project", { timeout: 60_000 }, () => {
 			persons: [],
 			rules: [],
 			threads: [],
-			held: [],
 			parleys: [],
 			asks: [],
 			items: [],

@@ -1,11 +1,10 @@
 /**
  * The projects entry: the work of a project behind the entry API of the host. It serves the persons, threads,
- * messages, rules, held actions, parleys, items, the gate, the digest, the memory of the host agent and the watch of
- * the project, the `ask` requests with their parleys, the checks of the labels `parley:<slug>` and `item:<id>`, the
- * digest before each input, the contracts of the answered read-backs, and the items that the reports of their workers
- * close, and drops the held actions of each child that ended. At the open of the host, it opens the project store,
- * moves an old store to items and labels, sends the pending deliveries, stops the workers of the work that ended, and
- * drops the held actions of the children that ended while the host was down.
+ * messages, rules, parleys, items, the digest, the memory of the host agent and the watch of the project, the `ask`
+ * requests with their parleys, the checks of the labels `parley:<slug>` and `item:<id>`, the digest before each input,
+ * the contracts of the answered read-backs, and the items that the reports of their workers close. At the open of the
+ * host, it opens the project store, moves an old store to items and labels, and stops the workers of the work that
+ * ended.
  */
 import { copyJson, type JsonValue } from "@earendil-works/chord/json";
 import type { Entry, EntryLine, EntryOpen, EntryOptions, EntryRequest } from "@vzlentin/harness/entry-api";
@@ -16,14 +15,11 @@ import { projectToolsExtension } from "../project-tool.ts";
 import { MEMORY_EXTENSION } from "../protocol/project.ts";
 import { type ProjectRequest, ProjectRequestLine, type Replies } from "../protocol/requests.ts";
 import { digestHook } from "./digest.ts";
-import { dropHeldOfEnded, dropHeldOfEndedAgents } from "./ended-agents.ts";
-import { gateExtension } from "./gate.ts";
 import { migrateTodos } from "./item-migration.ts";
 import { itemReports } from "./item-reports.ts";
 import { migrateLabels } from "./label-migration.ts";
 import { Compressor, type HostMemory, memoryExtension } from "./memory.ts";
 import { parleyReaction } from "./parleys.ts";
-import { sendDeliveries } from "./project-deliveries.ts";
 import { ProjectStore } from "./project-store.ts";
 import { serveProjectWatch } from "./project-watch.ts";
 import { type HandledRequest, handleProject, projectAsk, type ProjectsHost } from "./requests.ts";
@@ -51,8 +47,6 @@ const PROJECT_PASSIVE = {
 	message: active,
 	digest: active,
 	memory: active,
-	gate: active,
-	held: active,
 } satisfies { readonly [T in ProjectRequest["type"]]: (request: EntryLine) => boolean };
 
 /** What the entry has once the host is open: the harness, the root conversation, the storage and the project store. */
@@ -93,7 +87,6 @@ export default function projects(options: EntryOptions): Entry {
 			rulesExtension(() => host().store),
 			memoryExtension(memory, scope),
 			projectToolsExtension(options.durable, { Type }, scope),
-			gateExtension(scope.send),
 		],
 		// Only the host agent has the memory: no child inherits it, at any depth.
 		uninherited: [MEMORY_EXTENSION],
@@ -101,18 +94,12 @@ export default function projects(options: EntryOptions): Entry {
 		input: digestHook(host),
 		answeredAsk: (event, handlerOptions) => parleyReaction(host())(event, handlerOptions),
 		reported: (event) => itemReports(host())(event),
-		agentEnded: async ({ conversation }) => dropHeldOfEnded(host(), conversation),
 		labels: workLabelChecks(() => host().store),
 		protocol: { name: "projects", version: PROJECTS_PROTOCOL_VERSION },
 		ask: (request, { author }) => projectAsk(request, host(), author),
-		classifyList: async () =>
-			host()
-				.store.items()
-				.map(({ id, title, state }) => ({ id, text: title, state })),
 		// The project store opens first. The first start then moves the todos of the project to items, and the items that
 		// the children of an old store served to their labels, before any reader of the items or the labels. A worker of
-		// work that ended, such as one that a message resumed, stops at each start, and a child that ended while the host
-		// was down has its held actions dropped.
+		// work that ended, such as one that a message resumed, stops at each start.
 		open: async ({ harness, root, storage }) => {
 			// The host is the only writer, so a write never waits for a lock.
 			const store = ProjectStore.open(options.stateDir, 0);
@@ -126,10 +113,7 @@ export default function projects(options: EntryOptions): Entry {
 				throw error;
 			}
 
-			// A delivery that a crash left pending goes now. Each one that fails stays, with its warning.
-			await sendDeliveries(host()).catch(warn);
 			await stopEndedWork(host());
-			await dropHeldOfEndedAgents(host());
 		},
 		busy: () => compressor.running > 0,
 		close: async () => {

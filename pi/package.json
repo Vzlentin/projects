@@ -1,7 +1,7 @@
 {
 	"name": "@vzlentin/pi-projects",
 	"version": "0.0.0",
-	"description": "The Pi package of projects: the project tools, the digest, the rules and memory sections, /rules, the gate, /drafts and the parley skill, and the projects entry of the harness host",
+	"description": "The Pi package of projects: the project tools, the digest, the rules and memory sections, /rules, /drafts and the parley skill, and the projects entry of the harness host",
 	"keywords": [
 		"pi-package"
 	],

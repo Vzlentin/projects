@@ -7,7 +7,6 @@ import type { DocumentReader } from "@earendil-works/pi-durable";
 import type { EntryHandles } from "@vzlentin/harness/entry-api";
 import { type Worker, type Ask, type Parley } from "@vzlentin/harness/protocol";
 import type { ItemStage, StagedItem, WorkItem } from "../protocol/item.ts";
-import type { HeldAction } from "../protocol/project.ts";
 import { itemEnds, runAsker, runLive, taskRun } from "./items.ts";
 import type { StoreReader } from "./project-store.ts";
 
@@ -19,18 +18,17 @@ const context = BACKGROUND_CONTEXT;
  */
 export type StageHost = Pick<EntryHandles, "asks" | "labelledTasks" | "liveWorkers"> & {
 	readonly harness: Pick<DocumentReader, "snapshot">;
-	/** The project store, with the held actions and the parleys. */
-	readonly store: Pick<StoreReader, "held" | "parleys">;
+	/** The project store, with the parleys. */
+	readonly store: Pick<StoreReader, "parleys">;
 };
 
 /**
- * What the stage reads of the store, once for each read of items: the parleys, the open asks, the held actions, the
- * keys of the started tasks of each label, and the live workers of each label.
+ * What the stage reads of the store, once for each read of items: the parleys, the open asks, the keys of the started
+ * tasks of each label, and the live workers of each label.
  */
 type StageInputs = {
 	readonly parleys: readonly Parley[];
 	readonly asks: readonly Ask[];
-	readonly held: readonly HeldAction[];
 	readonly tasks: ReadonlyMap<string, readonly string[]>;
 	readonly workers: ReadonlyMap<string, readonly Worker[]>;
 };
@@ -65,15 +63,14 @@ async function readInputs(host: StageHost): Promise<StageInputs> {
 		host.liveWorkers(),
 	]);
 
-	return { parleys: host.store.parleys(), asks, held: host.store.held(), tasks, workers };
+	return { parleys: host.store.parleys(), asks, tasks, workers };
 }
 
 /**
  * `item` with its stage and its mark. The first check that holds gives the stage: the state `done` or `dropped`, a live
  * worker or run that serves it (`building`), an open parley that shapes it (`shaping`), a contract that shapes it
  * (`ready`), and else `inbox`. A worker serves the item with its label `item:<id>`. It needs the user when a parley that
- * shapes it has an open ask, a live agent of its label has an open ask or a held action, or a run that serves it has an
- * open ask.
+ * shapes it has an open ask, a live agent of its label has an open ask, or a run that serves it has an open ask.
  */
 function staged(inputs: StageInputs, item: WorkItem): StagedItem {
 	const { runs, parleys: slugs } = itemEnds(item);
@@ -119,9 +116,5 @@ function needsYou(inputs: StageInputs, ends: StageEnds, parleys: readonly Parley
 	const ids = new Set(parleys.map((parley) => parley.id));
 	const askers = new Set([...ends.agents, ...ends.runs.map(runAsker)]);
 
-	const asked = inputs.asks.some(
-		(ask) => askers.has(ask.asker) || (ask.parley !== undefined && ids.has(ask.parley.id)),
-	);
-
-	return asked || inputs.held.some((held) => held.state === "held" && ends.agents.includes(held.agent));
+	return inputs.asks.some((ask) => askers.has(ask.asker) || (ask.parley !== undefined && ids.has(ask.parley.id)));
 }

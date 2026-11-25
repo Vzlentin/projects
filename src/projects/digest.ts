@@ -1,10 +1,10 @@
 /**
  * The digest of each agent, in this order: the line `board of <project>: <n> open`; up to 10 lines `○ <id> <title>`,
  * the open items with no open need (no `needs` edge to an open item), in ID order; one `+<n> later` line for the open
- * items that it does not show; one `waiting on:` line with the messages out of the project that wait; and one `held:`
- * line with the held actions of the agent. An agent gets it only when it changed since its last digest, or when its
- * context lost the last one: after a new head of its context, a head marker of a hosted conversation (a compaction or a
- * reset) or a compaction entry of a Pi session. So it reads a thread or an item only when it needs the words.
+ * items that it does not show; and one `waiting on:` line with the messages out of the project that wait. An agent
+ * gets it only when it changed since its last digest, or when its context lost the last one: after a new head of its
+ * context, a head marker of a hosted conversation (a compaction or a reset) or a compaction entry of a Pi session. So it
+ * reads a thread or an item only when it needs the words.
  */
 import { createHash } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -12,14 +12,7 @@ import type { DocumentReader, Harness } from "@earendil-works/pi-durable";
 import type { Degraded } from "@vzlentin/harness/degraded";
 import type { InputHook, InputHookCall } from "@vzlentin/harness/entry-api";
 import { ITEM_MARKS, type WorkItem } from "../protocol/item.ts";
-import {
-	DIGEST_KIND,
-	type HeldAction,
-	isWaiting,
-	type PersonNames,
-	personNames,
-	type Thread,
-} from "../protocol/project.ts";
+import { DIGEST_KIND, isWaiting, type PersonNames, personNames, type Thread } from "../protocol/project.ts";
 import type { OutFileMessage } from "../protocol/store-file.ts";
 import { sessionDoc } from "./project-docs.ts";
 import type { StoreReader } from "./project-store.ts";
@@ -40,21 +33,20 @@ type DigestRecord = { count: number; text: string; head?: string };
 const Digests = sessionDoc<{ callers: Record<string, DigestRecord> }>("harness.digests", () => ({ callers: {} }));
 
 /**
- * A digest that a caller gets: its text, the IDs of its messages and held actions, its key, and the head of its
- * context.
+ * A digest that a caller gets: its text, the IDs of its messages and items, its key, and the head of its context.
  */
 export type Digest = {
 	readonly text: string;
 	readonly count: number;
 	readonly head: string | undefined;
 	readonly key: string;
-	readonly data: { waits: number[]; held: number[]; items: number[] };
+	readonly data: { waits: number[]; items: number[] };
 };
 
 /** What the digest uses of the host. */
 export type DigestHost = {
 	readonly harness: Pick<Harness, "snapshot" | "commit">;
-	/** The project store, with the persons, the threads, the messages out, the held actions and the items. */
+	/** The project store, with the persons, the threads, the messages out and the items. */
 	readonly store: StoreReader;
 	/** The name of the host, which names the project. */
 	readonly host: string;
@@ -63,7 +55,7 @@ export type DigestHost = {
 
 /**
  * The digest of `caller` now, or `undefined` when its text and `head` are those of its last digest, or when the caller
- * never got a digest and nothing waits, nothing is held and no item is open. `head` is the ID of the newest head of the
+ * never got a digest and nothing waits and no item is open. `head` is the ID of the newest head of the
  * context of the caller, so a new head gives the digest again. The key `<count>:<hash>` names its count and its text.
  */
 export async function nextDigest(
@@ -80,20 +72,18 @@ export async function nextDigest(
 	const threads = store.threads();
 	const outbox = store.outMessages();
 
-	const held = store.held();
 	const open = store.items("open");
 	const digests = await harness.snapshot(Digests, context);
 
 	const waiting = outbox.filter((out) => isWaiting(out.state));
-	const own = held.filter((action) => action.state === "held" && action.agent === caller);
 	const last = digests?.callers[caller];
 
-	if (last === undefined && waiting.length === 0 && own.length === 0 && open.length === 0) return undefined;
+	if (last === undefined && waiting.length === 0 && open.length === 0) return undefined;
 	const names = personNames(persons);
 	const byId = new Map(threads.map((thread) => [thread.id, thread]));
 	const shownBoard = board(host.host, open);
 
-	const text = [...shownBoard.lines, waitsLine(waiting, byId, names), heldLine(own)].join("\n");
+	const text = [...shownBoard.lines, waitsLine(waiting, byId, names)].join("\n");
 
 	if (last?.text === text && last.head === head) return undefined;
 	const count = (last?.count ?? 0) + 1;
@@ -106,7 +96,6 @@ export async function nextDigest(
 		key: `${count}:${hash}`,
 		data: {
 			waits: waiting.map((out) => out.id),
-			held: own.map((action) => action.id),
 			items: shownBoard.shown,
 		},
 	};
@@ -185,13 +174,6 @@ function waitsLine(
 	});
 
 	return `waiting on: ${items.length === 0 ? "none" : items.join(" · ")}`;
-}
-
-/** `held: <id> <tool>: <reason>` for each action, or `none`. */
-function heldLine(held: readonly HeldAction[]): string {
-	const items = held.map((action) => `${action.id} ${action.tool}: ${action.reason}`);
-
-	return `held: ${items.length === 0 ? "none" : items.join(" · ")}`;
 }
 
 /** `<day> <month> <HH:MM>`, in UTC, such as `12 Nov 14:22`. */

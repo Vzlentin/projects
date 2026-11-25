@@ -23,12 +23,14 @@ import {
 import type { Replies } from "../src/protocol/requests.ts";
 import {
 	answerOf,
+	cellResults,
 	cli,
 	contexts,
 	models,
 	newHost,
 	requests,
 	root,
+	scripts,
 	send,
 	setUp,
 	spawnAs,
@@ -1006,19 +1008,19 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 			const sent = (at: number) => `Sam (own-brand C+P, sent ${utcMinute(at)})`;
 
 			const both = (at: number) =>
-				`board of digest: 0 open\nwaiting on: ${sent(at)} · Benoit (double loyalty, draft not sent)\nheld: none`;
+				`board of digest: 0 open\nwaiting on: ${sent(at)} · Benoit (double loyalty, draft not sent)`;
 
 			expect([before, after].map(both)).toContain(await digestOf(project, "pi-1"));
 			expect(await digestOf(project, "pi-1")).toBeUndefined();
 
 			await send({ ...mark, message: toBenoit.id, state: "dropped" }, project);
-			const samOnly = (at: number) => `board of digest: 0 open\nwaiting on: ${sent(at)}\nheld: none`;
+			const samOnly = (at: number) => `board of digest: 0 open\nwaiting on: ${sent(at)}`;
 			expect([before, after].map(samOnly)).toContain(await digestOf(project, "pi-1"));
 			// Each caller has its own last digest.
 			expect([before, after].map(samOnly)).toContain(await digestOf(project, "pi-2"));
 
 			await logAt(project, brand.id, sam.id, 2_000, "Thanks.");
-			expect(await digestOf(project, "pi-1")).toBe("board of digest: 0 open\nwaiting on: none\nheld: none");
+			expect(await digestOf(project, "pi-1")).toBe("board of digest: 0 open\nwaiting on: none");
 			expect(await digestOf(project, "pi-1")).toBeUndefined();
 			expect(await digestOf(project, "pi-3")).toBeUndefined();
 		} finally {
@@ -1039,7 +1041,7 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 			);
 
 			const draft = await logAt(project, thread.id, "user", 1_000, "The scope.");
-			const waiting = "board of digest-child: 0 open\nwaiting on: Sam (Scope, draft not sent)\nheld: none";
+			const waiting = "board of digest-child: 0 open\nwaiting on: Sam (Scope, draft not sent)";
 			const child = await spawnAs("digest-test", "Digest one", { notify: false, host: project });
 			await answerOf(child.handle, project);
 			expect(contexts.get("Digest one")).toEqual([waiting, "Digest one"]);
@@ -1064,7 +1066,7 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 				waiting,
 				"Digest one",
 				"Digest two",
-				"board of digest-child: 0 open\nwaiting on: none\nheld: none",
+				"board of digest-child: 0 open\nwaiting on: none",
 				"Digest three",
 			]);
 		} finally {
@@ -1116,6 +1118,24 @@ describe("the store of the project", { timeout: 30_000 }, () => {
 			expect(requests.get("Rules four")?.sections).not.toHaveProperty("project_rules");
 		} finally {
 			await rules.close();
+		}
+	});
+
+	it("runs the tool call of a child in a project with a decided conduct rule and no classifier", async () => {
+		const project = "rules-run";
+		const started = await newHost(project);
+
+		try {
+			const create = { type: "rule", action: "create", caller: "user", name: "ask", kind: "conduct" } as const;
+			await send({ ...create, value: "Ask before each command." }, project);
+			const prompt = "Run the command";
+			scripts.set(prompt, [{ name: "bash", arguments: { command: "echo ran-$((6 * 7))" } }]);
+
+			const child = await spawnAs("rules-run-test", prompt, { notify: false, host: project });
+			await answerOf(child.handle, project);
+			expect(cellResults.get(prompt)).toEqual([expect.stringMatching(/^ran-42\s*$/)]);
+		} finally {
+			await started.close();
 		}
 	});
 
