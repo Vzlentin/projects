@@ -1,6 +1,6 @@
 {
 	"name": "@vzlentin/pi-projects",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"description": "The Pi package of projects: the project tools, the digest, the rules and memory sections, /rules, /drafts and the parley skill, and the projects entry of the harness host",
 	"keywords": [
 		"pi-package"
@@ -14,7 +14,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vzlentin/projects": "0.0.0"
+		"@vzlentin/projects": "0.0.1"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
