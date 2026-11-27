@@ -203,6 +203,8 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 			{ key: "b", label: "In files" },
 		];
 
+		const view = "A `table` of the places\n\n```mermaid\ngraph LR\n  store --> files\n```";
+
 		scripts.set(prompt, [
 			{
 				name: "parley",
@@ -211,11 +213,9 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 					slug: "where",
 					title: "Where asks live",
 					goal: "Pick the place.",
+					context: "The asks live in **one** place.",
 					design_sense: "One writer.",
-					asks: [
-						{ title: "Where", kind: "your call", options, plan: "a", view: "A `table` of the places" },
-						{ title: "These are the terms" },
-					],
+					asks: [{ title: "Where", kind: "your call", options, plan: "a", view }, { title: "These are the terms" }],
 				},
 			},
 			{ name: "parley", arguments: { action: "read", slug: "where", ask: 1 } },
@@ -249,17 +249,16 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 		await cli(["wait", handle]);
 		const results = cellResults.get(prompt) ?? [];
 
+		const head = "# Where asks live\n\nThe asks live in **one** place.\n\n";
 		expect(results.slice(0, 2)).toEqual([
-			"where · open · Where asks live\n1 · Where · your call · open · plan a · In the store\n  a · In the store · gains: One writer\n  b · In files\n2 · These are the terms · open\n[where] 1a ok\n",
-			"1 · Where · your call · open · plan a · In the store\nA `table` of the places\n",
+			`${head}1. Where? Plan a\n\n${view}\n\n- a · In the store · gains: One writer\n- b · In files\n\n2. These are the terms?\n\n[where] 1a ok\n`,
+			`1 · Where · your call · open · plan a · In the store\n${view}\n`,
 		]);
 		await untilContract("where");
 		// The host refuses the answer, and its error reaches the call.
 		expect(results[2]).toContain("Ask 1 takes a, b or own");
 
-		expect(results[3]).toBe(
-			"where · open · Where asks live\n1 · Where · your call · b · In files\n2 · These are the terms · ok\n[where] ok\n",
-		);
+		expect(results[3]).toBe(`${head}1. Where? b · In files\n\n2. These are the terms? ok\n\n[where] ok\n`);
 		expect(results[4]).toContain("round requires slug");
 		expect(results.slice(5, 7)).toEqual(["3 · Push now? · open\n", "3 · Push now? · open\n"]);
 		expect(results[7]).toContain("Parley where has no ask 9");
@@ -278,7 +277,7 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 			note: "20261115-where",
 		});
 		// A round entry with ask replaces the question of that open ask, which keeps its number.
-		expect(results[12]).toBe("fix · open · Fix\n1 · New · open\n[fix] ok\n");
+		expect(results[12]).toBe("# Fix\n\n1. New?\n\n[fix] ok\n");
 	});
 
 	it("runs the flow of the parley skill from its first round to the contract", async () => {
@@ -292,7 +291,13 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 		});
 
 		const calls = [
-			{ title: "Where", kind: "your call", options: [{ key: "a", label: "In the store" }], plan: "a" },
+			{
+				title: "Where",
+				kind: "your call",
+				options: [{ key: "a", label: "In the store" }],
+				plan: "a",
+				view: "The store keeps it.",
+			},
 			{
 				title: "How",
 				kind: "my call",
@@ -301,6 +306,7 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 					{ key: "b", label: "Fast", gains: ["Half the time"] },
 				],
 				plan: "b",
+				view: "Fast is enough.",
 			},
 		];
 
@@ -338,19 +344,18 @@ describe("the tools of the store of the project", { timeout: 30_000 }, () => {
 		const handle = handleOf(await cli(["spawn", "--prompt", "Run the parley flow"]));
 		await cli(["wait", handle]);
 		await untilContract("flow");
-		const head = "flow · open · Flow\n1 · Where · your call · ";
-		const options = "  a · Slow\n  b · Fast · gains: Half the time\n";
-		const open = `${head}open · plan a · In the store\n  a · In the store\n2 · How · my call · open · plan b · Fast\n${options}[flow] 1a ok\n`;
-		const answered = `${head}a · In the store\n2 · How · my call · b · Fast\n`;
+		const where = "# Flow\n\n1. Where? Plan a\n\nThe store keeps it.\n\n- a · In the store\n\n";
+		const how = "2. How? Plan b (my call)\n\nFast is enough.\n\n- a · Slow\n- b · Fast · gains: Half the time\n\n";
+		const open = `${where}${how}[flow] 1a ok\n`;
+		const answered = "# Flow\n\n1. Where? a · In the store\n\n2. How? b · Fast\n\n";
 		const todos = "○ 1 Save to the vault: Where\n○ 2 Save to the vault: How\n";
-		const agreed = `${answered}3 · These are the terms · ok\n[flow] ok\n`;
 
 		expect(cellResults.get(prompt)).toEqual([
 			open,
 			open,
 			`${answered}[flow] ok\n${todos}`,
-			`${answered}3 · These are the terms · open\n[flow] ok\n`,
-			`${agreed}${todos}`,
+			`${answered}3. These are the terms?\n\n[flow] ok\n`,
+			`${answered}3. These are the terms? ok\n\n[flow] ok\n${todos}`,
 		]);
 	});
 

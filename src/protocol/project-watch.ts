@@ -1,8 +1,8 @@
 /** The reply and the events of `watch-project`: the objects of the store of the project, and the degraded states. */
-import { DegradedState, LocalId, StoreId, Ask, Parley } from "@vzlentin/harness/protocol";
+import { DegradedState, LocalId, StoreId, Ask } from "@vzlentin/harness/protocol";
 import { type Static, Type } from "typebox";
 import { StagedItem } from "./item.ts";
-import { Person, ProjectThread, Rule } from "./project.ts";
+import { Parley, Person, ProjectThread, Rule } from "./project.ts";
 
 /**
  * The reply of `watch-project`: every person, rule, thread with its waits, parley and ask, in ID order, the open work

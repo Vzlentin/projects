@@ -441,7 +441,7 @@ describe("watch-project", { timeout: 60_000 }, () => {
 						action: "round",
 						caller: "pi-1",
 						parley: { slug: "store", title: "The store", goal: "Keep the asks." },
-						asks: [{ title: "Where", options: [{ key: "a", label: "Here" }], plan: "a" }],
+						asks: [{ title: "Where", options: [{ key: "a", label: "Here" }], plan: "a", view: "Here or there" }],
 					},
 					project,
 				),

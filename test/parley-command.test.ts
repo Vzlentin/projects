@@ -4,19 +4,25 @@ import { OPTIONS, projects, send, setUp, startHost, tearDown, unlinkContract, un
 
 let host: Host | undefined;
 
-/** Writes the parley `slug` with one call, its evidence, its design sense and a read-back, as the caller `pi-1`. */
+/**
+ * Writes the parley `slug` with its context, one call, its evidence, its design sense and a read-back, as the caller
+ * `pi-1`.
+ */
 async function framed(slug: string): Promise<void> {
+	const parley = {
+		slug,
+		title: "Where asks live",
+		goal: "Pick the place.",
+		context: "Asks need **one** home.",
+		evidence: ["The store has one writer", "Files race"],
+		design_sense: "One writer.",
+	};
+
 	await send({
 		type: "ask",
 		action: "round",
 		caller: "pi-1",
-		parley: {
-			slug,
-			title: "Where asks live",
-			goal: "Pick the place.",
-			evidence: ["The store has one writer", "Files race"],
-			design_sense: "One writer.",
-		},
+		parley,
 		asks: [
 			{ title: "Where", kind: "your call", tension: "Speed or safety", options: OPTIONS, plan: "a", view: "The view" },
 			{ title: "These are the terms" },
@@ -60,7 +66,8 @@ describe("projects parley show", { timeout: 60_000 }, () => {
 		expect(await projects(["parley", "show", "made"])).toEqual({
 			code: 0,
 			stdout:
-				"# Where asks live\n\nPick the place.\n\n## 1. Where\n\nAnswer: In the store, with a view\n\nKeep it.\n\n" +
+				"# Where asks live\n\nPick the place.\n\nAsks need **one** home.\n\n## 1. Where\n\nAnswer: In the store, with a view\n\n" +
+				"Keep it.\n\n" +
 				"And the view.\n\n## Design sense\n\nOne writer.\n\n## Evidence\n\n- The store has one writer\n- Files race\n",
 			stderr: "",
 		});
@@ -72,7 +79,7 @@ describe("projects parley show", { timeout: 60_000 }, () => {
 		expect(await projects(["parley", "show", "waiting"])).toEqual({
 			code: 0,
 			stdout:
-				"# Where asks live\n\nPick the place.\n\n## 1. Where\n\nOpen, plan a: In the store\n\n" +
+				"# Where asks live\n\nPick the place.\n\nAsks need **one** home.\n\n## 1. Where\n\nOpen, plan a: In the store\n\n" +
 				"## Design sense\n\nOne writer.\n\n## Evidence\n\n- The store has one writer\n- Files race\n",
 			stderr: "",
 		});

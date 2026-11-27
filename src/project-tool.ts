@@ -5,19 +5,7 @@
 import type { JsonValue } from "@earendil-works/chord/json";
 import type * as Durable from "@earendil-works/pi-durable";
 import type { Extension } from "@earendil-works/pi-durable";
-import {
-	Ask,
-	ASK_KINDS,
-	AskList,
-	askLine,
-	AskWrite,
-	isFinished,
-	Parley,
-	ParleyAsks,
-	type ParleyFrame,
-	PLAIN_RULE,
-	todoLine,
-} from "@vzlentin/harness/protocol";
+import { Ask, ASK_KINDS, AskList, askLine, isFinished, PLAIN_RULE, todoLine } from "@vzlentin/harness/protocol";
 import {
 	type DurableScope,
 	listText,
@@ -45,10 +33,13 @@ import {
 	StagedItem,
 } from "./protocol/item.ts";
 import {
+	AskWrite,
 	MESSAGE_MARKS,
 	MESSAGE_STATES,
 	Message,
 	messageLine,
+	Parley,
+	ParleyAsks,
 	ParleyList,
 	parleyLine,
 	parleyText,
@@ -59,6 +50,7 @@ import {
 	Rule,
 	RULE_KINDS,
 	RULE_STATES,
+	type RoundFrame,
 	type RuleFilter,
 	RuleList,
 	type RuleUserChange,
@@ -83,9 +75,9 @@ export const RULE_TOOL_DESCRIPTION = `Keep the rules of the project. A conduct r
 - list: the rules, only those of \`kind\` when you give it.
 Each rule prints as \`<id> <name> (<kind>, <status>): <value> [said by <author> in message <source>]\` or \`[said by user: "<words>"]\`, where the status is ${oneOf(RULE_STATES)} and the author is \`user\` or \`<name> (<id>)\`. A rule of the user has no source.`;
 
-export const PARLEY_TOOL_DESCRIPTION = `Put questions to the user as asks, alone or in a parley: a group of asks with a slug, a title, a goal, evidence and a design sense.
-Before you ask, read the vault on the topic. Write the view of each ask with show-me, with wiki links to the notes that the vault already holds. When the user answers an ask and \`VAULT\` names a folder that exists, you get the todo \`Save to the vault: <title>\`. Ask your next question first, and do the todo while the user decides: write the view and the decision into the vault, with an update of a note that exists when you can. Give the note an \`id\` in its front matter, and record that ID with \`note\` (or \`harness parley note\`): this closes the todo. When nothing is worth a note, set the todo to dropped with the \`todo\` tool, and say why in one line.
-- round: add the asks \`asks\`. With \`slug\`, they serve the parley \`slug\`: a new slug needs \`title\` and \`goal\`, and \`title\`, \`goal\`, \`evidence\` and \`design_sense\` change an open parley. With a new \`slug\`, \`title\` and \`goal\`, \`asks\` can be left out: the round makes the open parley with no asks. With \`slug\` of an open parley, \`asks\` can be left out when the round changes one of these fields. With \`item\` and \`slug\`, the parley shapes the open work item \`item\`. To fix an open ask of the parley, give \`ask\`, its number, in that entry of \`asks\`: the entry replaces the title, kind, tension, options, plan and view of the ask, and the ask keeps its number. The other entries are new asks.
+export const PARLEY_TOOL_DESCRIPTION = `Put questions to the user as asks, alone or in a parley: a group of asks with a slug, a title, a goal, a context, evidence and a design sense.
+Before you ask, read the vault on the topic. Write the view of each ask with show-me: an ask with options needs a view, with wiki links to the notes that the vault already holds. When the user answers an ask and \`VAULT\` names a folder that exists, you get the todo \`Save to the vault: <title>\`. Ask your next question first, and do the todo while the user decides: write the view and the decision into the vault, with an update of a note that exists when you can. Give the note an \`id\` in its front matter, and record that ID with \`note\` (or \`harness parley note\`): this closes the todo. When nothing is worth a note, set the todo to dropped with the \`todo\` tool, and say why in one line.
+- round: add the asks \`asks\`. With \`slug\`, they serve the parley \`slug\`: a new slug needs \`title\` and \`goal\`, and \`title\`, \`goal\`, \`context\`, \`evidence\` and \`design_sense\` change an open parley. \`context\` is Markdown, written with show-me, that the parley shows above its asks. With a new \`slug\`, \`title\` and \`goal\`, \`asks\` can be left out: the round makes the open parley with no asks. With \`slug\` of an open parley, \`asks\` can be left out when the round changes one of these fields. With \`item\` and \`slug\`, the parley shapes the open work item \`item\`. To fix an open ask of the parley, give \`ask\`, its number, in that entry of \`asks\`: the entry replaces the title, kind, tension, options, plan and view of the ask, and the ask keeps its number. The other entries are new asks.
 - answer: write the answers of the user, \`answers\`, each to the ask \`ask\`: the key of an option, ok, or own with the \`label\` that the user gave it, and \`words\`, the exact words of the user. The answer ok to the read-back of a parley, its ask with no options, makes the parley a contract a moment after the answer, and adds a work item with the title of the parley when the contract shapes no item: read the parley to see them.
 - drop: drop the open ask \`ask\`.
 - note: record \`note\`, the ID of the note in the vault that explains the ask \`ask\`, in any state. Only the asker of the ask records its note, and a second note replaces the first.
@@ -93,13 +85,14 @@ Before you ask, read the vault on the topic. Write the view of each ask with sho
 - end: end the parley \`slug\` with \`status\`. A contract ends as done or dropped, and only when it shapes no open item: the change of the last open item of a contract to done or dropped ends the contract. An open parley ends only as dropped, and its open asks drop with it.
 - read: the parley \`slug\` and its asks, or the ask \`ask\` and its view.
 - list: the parleys, then the open asks with no parley.
+Outside the text of a parley, a parley prints as \`<slug> · <status> · <title>\`, and an ask as \`<n> · <title> · <kind> · open · plan <key> · <label>\`, \`<n> · <title> · <kind> · <answer> · <label>\` or \`<n> · <title> · <kind> · dropped\`.
 With \`slug\`, \`ask\` is the number of the ask in the parley. Without \`slug\`, it is the ID of an ask with no parley.
 The user answers a parley with a line such as \`[<slug>] 1a 3:"own words" 4b:"a note" ?5 ok\`. Write it with one \`answer\` call with \`slug\`:
 - \`<n><key>\` is \`{ ask: n, answer: key }\`, and \`<n><key>:"<words>"\` adds \`words: [<words>]\`.
 - \`<n>:"<words>"\` is \`{ ask: n, answer: own, label, words: [<words>] }\`, with a short label of the words.
 - \`?<n>\` writes nothing: explain n first.
 - \`ok\` is \`{ ask: n, answer: <plan> }\` for each open my call n that the line does not name, and \`{ ask: n, answer: ok }\` for the open read-back n.
-A parley prints as \`<slug> · <status> · <title>\`, then each ask as \`<n> · <title> · <kind> · open · plan <key> · <label>\`, \`<n> · <title> · <kind> · <answer> · <label>\` or \`<n> · <title> · <kind> · dropped\`. Under an open ask, each option prints as \`  <key> · <label> · gains: … · costs: …\`. Its last line is the answer line of an open parley, \`[<slug>]\` with \`<n><plan>\` for each open your call and ok, or \`harness parley show <slug>\`. After an answer come your open todos of its asks, such as \`○ 3 Save to the vault: <title>\`.`;
+A parley prints as blocks separated by blank lines: \`# <title>\`, its context, then each ask. An open ask prints as \`<n>. <title>? Plan <key> (my call)\`, then its view word for word, then each option as \`- <key> · <label> · gains: … · costs: …\`. An answered ask prints as \`<n>. <title>? <answer> · <label>\`, then the words of the user, and a dropped ask as \`<n>. <title>? dropped\`. Its last line is the answer line of an open parley, \`[<slug>]\` with \`<n><plan>\` for each open your call and ok, or \`harness parley show <slug>\`. After an answer come your open todos of its asks, such as \`○ 3 Save to the vault: <title>\`.`;
 
 export const ITEM_TOOL_DESCRIPTION = `Keep the work items of the project. An item is a piece of work: a title, a text that says what to build, and a state, ${oneOf(ITEM_STATES)}. Its edges link it to the parleys that shape it, the agents and runs that serve it, the commits that landed it, and the items that it needs.
 The agent that talks with the user keeps the board true: it adds, rewords, closes, drops and links items from what the chat shows. A message to a person stays a thread draft, not an item.
@@ -194,6 +187,7 @@ export function projectToolSchemas(typebox: Pick<typeof TypeBox, "Type">) {
 			evidence: Type.Optional(
 				Type.Array(Type.String({ pattern: "\\S" }), { description: "round: the evidence of the parley" }),
 			),
+			context: text("round: the context of the parley, in Markdown, which its text shows above its asks"),
 			design_sense: text("round: the design sense of the parley, which its contract needs"),
 			item: id("round: the ID of the work item that the parley shapes"),
 			asks: Type.Optional(
@@ -219,7 +213,11 @@ export function projectToolSchemas(typebox: Pick<typeof TypeBox, "Type">) {
 							),
 						),
 						plan: Type.Optional(Type.String({ description: "The key of the option that you propose" })),
-						view: Type.Optional(Type.String({ description: "A text that explains the ask, in Markdown" })),
+						view: Type.Optional(
+							Type.String({
+								description: "A text that explains the ask, in Markdown, which an ask with options needs",
+							}),
+						),
 					}),
 					{ description: "round: the asks; an ask with no options in a parley is its read-back" },
 				),
@@ -504,21 +502,23 @@ async function saveTodoText(write: AskWrite, scope: ProjectScope): Promise<strin
 }
 
 /** The frame of the parley of a round: its slug and the fields that the call gives. */
-function roundFrame(args: ParleyArgs): ParleyFrame | undefined {
-	const { slug, title, goal, evidence, design_sense, item } = args;
+function roundFrame(args: ParleyArgs): RoundFrame | undefined {
+	const { slug, title, goal, context, evidence, design_sense, item } = args;
 
 	if (slug === undefined) {
-		if ([title, goal, evidence, design_sense, item].some((field) => field !== undefined))
+		if ([title, goal, context, evidence, design_sense, item].some((field) => field !== undefined))
 			throw new Error("round requires slug");
 
 		return undefined;
 	}
 
-	let frame: ParleyFrame = { slug };
+	let frame: RoundFrame = { slug };
 
 	if (title !== undefined) frame = { ...frame, title };
 
 	if (goal !== undefined) frame = { ...frame, goal };
+
+	if (context !== undefined) frame = { ...frame, context };
 
 	if (evidence !== undefined) frame = { ...frame, evidence };
 

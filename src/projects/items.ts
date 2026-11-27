@@ -11,7 +11,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { DocumentReader } from "@earendil-works/pi-durable";
 import type { EntryHandles } from "@vzlentin/harness/entry-api";
-import { type Worker, refParts, type Ask, type Parley, type ParleyEnd } from "@vzlentin/harness/protocol";
+import { type Worker, refParts, type Ask, type ParleyEnd } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
 import {
 	CommitRef,
@@ -23,6 +23,7 @@ import {
 	type ItemState,
 	type WorkItem,
 } from "../protocol/item.ts";
+import type { Parley } from "../protocol/project.ts";
 import { edgeEnds, type StoreReader, type StoreTx } from "./project-store.ts";
 
 const context = BACKGROUND_CONTEXT;

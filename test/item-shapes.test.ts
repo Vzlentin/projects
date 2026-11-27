@@ -3,7 +3,7 @@ import { AskList, AskWrite, Parley, ParleyAsks } from "@vzlentin/harness/protoco
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { ItemList, StagedItem } from "../src/protocol/item.ts";
-import { answer, framed, OPTIONS, round, send, setUp, startHost, tearDown, untilContract } from "./helpers.ts";
+import { answer, framed, OPTIONS, round, send, setUp, startHost, tearDown, untilContract, VIEW } from "./helpers.ts";
 
 let host: Host | undefined;
 
@@ -71,7 +71,7 @@ async function openAsks(): Promise<AskList> {
 /** A round as `pi-1` for the new parley `slug`, with one call, that shapes the item `item`. */
 async function shapingRound(slug: string, item: number): Promise<AskWrite> {
 	const parley = { slug, title: `Shape ${slug}`, goal: "Pick." };
-	const asks = [{ title: "Which", kind: "your call" as const, options: OPTIONS }];
+	const asks = [{ title: "Which", kind: "your call" as const, options: OPTIONS, view: VIEW }];
 
 	return Value.Parse(AskWrite, await send({ type: "ask", action: "round", caller: "pi-1", parley, item, asks }));
 }

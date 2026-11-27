@@ -22,6 +22,7 @@ import {
 	createHost,
 	openDurableHost,
 	OPTIONS,
+	VIEW,
 	PROJECTS_FIXTURE,
 	readStores,
 	send,
@@ -318,7 +319,7 @@ describe("the move of the todos of the project to items", { timeout: 60_000 }, (
 						caller: "pi-1",
 						parley: { slug: "after-move", title: "After the move", goal: "Pick.", design_sense: "One." },
 						asks: [
-							{ title: "Where", kind: "your call", options: OPTIONS, plan: "a" },
+							{ title: "Where", kind: "your call", options: OPTIONS, plan: "a", view: VIEW },
 							{ title: "These are the terms" },
 						],
 					},

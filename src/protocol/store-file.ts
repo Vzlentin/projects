@@ -3,11 +3,11 @@
  * `project.sqlite`. `store load` refuses a file of another version.
  */
 import { readFileSync } from "node:fs";
-import { Todo, refParts, errorMessage, Ask, Parley } from "@vzlentin/harness/protocol";
+import { Todo, refParts, errorMessage, Ask } from "@vzlentin/harness/protocol";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { edgeItem, edgeLine, WorkItem } from "./item.ts";
-import { Message, Person, Rule, Thread } from "./project.ts";
+import { Message, Parley, Person, Rule, Thread } from "./project.ts";
 
 /** The version of the shape of a store file. */
 export const STORE_FILE_VERSION = 3;

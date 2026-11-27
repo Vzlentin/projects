@@ -11,6 +11,7 @@ import { StoreFile } from "../src/protocol/store-file.ts";
 import {
 	createHost,
 	OPTIONS,
+	VIEW,
 	PROJECTS_FIXTURE,
 	projects,
 	readStores,
@@ -84,7 +85,10 @@ async function fill(host: string): Promise<void> {
 			action: "round",
 			caller: "pi-1",
 			parley: { slug: "where", title: "Where asks live", goal: "Pick the place.", design_sense: "One writer." },
-			asks: [{ title: "Where", kind: "your call", options: OPTIONS, plan: "a" }, { title: "These are the terms" }],
+			asks: [
+				{ title: "Where", kind: "your call", options: OPTIONS, plan: "a", view: VIEW },
+				{ title: "These are the terms" },
+			],
 		},
 		host,
 	);

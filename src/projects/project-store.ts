@@ -8,11 +8,11 @@
  */
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
-import { Parley, ParleyFields } from "@vzlentin/harness/protocol";
+import { ParleyFields } from "@vzlentin/harness/protocol";
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import { Edge, type EdgeInput, type EdgeItem, edgeItem, type ItemState, WorkItem } from "../protocol/item.ts";
-import { type Author, Message, Person, Rule, type RuleFilter, Thread } from "../protocol/project.ts";
+import { type Author, Message, Parley, Person, Rule, type RuleFilter, Thread } from "../protocol/project.ts";
 import { FileMessage, OutFileMessage } from "../protocol/store-file.ts";
 
 /** The file of the store, in the state directory of the project. */
@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS parley (
 	design_sense TEXT,
 	status TEXT NOT NULL,
 	at INTEGER NOT NULL,
-	"by" TEXT NOT NULL
+	"by" TEXT NOT NULL,
+	context TEXT
 );
 CREATE TABLE IF NOT EXISTS item (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +93,7 @@ const MESSAGE_COLUMNS = `id, thread, COALESCE(person, 'user') AS "from", directi
 
 const RULE_COLUMNS = `id, name, kind, value, status, COALESCE(said_by, 'user') AS saidBy, source, thread, words, replaces, at, "by"`;
 
-const PARLEY_COLUMNS = `id, slug, title, goal, evidence, design_sense, status, at, "by"`;
+const PARLEY_COLUMNS = `id, slug, title, goal, evidence, design_sense, status, at, "by", context`;
 
 const ITEM_COLUMNS = `id, title, text, state, at, "by"`;
 
@@ -104,6 +105,7 @@ const ParleyRow = Type.Object({
 	design_sense: Type.Optional(Type.String()),
 	evidence: Type.Optional(Type.String()),
 	status: Type.String(),
+	context: Type.Optional(Type.String()),
 });
 
 /** An item row, without its edges. */
@@ -454,7 +456,7 @@ export class StoreTx extends StoreReader {
 	/** Adds the parley `parley`, with the next ID when it has none, and gives it. */
 	addParley(parley: NewParley): Parley {
 		const id = this.#insert(
-			`INSERT INTO parley (id, slug, title, goal, evidence, design_sense, status, at, "by") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO parley (id, slug, title, goal, evidence, design_sense, status, at, "by", context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			parley.id ?? null,
 			...parleyValues(parley),
 		);
@@ -468,7 +470,7 @@ export class StoreTx extends StoreReader {
 	putParley(parley: Parley): void {
 		this.db
 			.prepare(
-				`UPDATE parley SET slug = ?, title = ?, goal = ?, evidence = ?, design_sense = ?, status = ?, at = ?, "by" = ? WHERE id = ?`,
+				`UPDATE parley SET slug = ?, title = ?, goal = ?, evidence = ?, design_sense = ?, status = ?, at = ?, "by" = ?, context = ? WHERE id = ?`,
 			)
 			.run(...parleyValues(parley), parley.id);
 		this.#record("parley", parley.id);
@@ -568,6 +570,7 @@ export class ProjectStore extends StoreReader {
 			db.exec("PRAGMA foreign_keys = ON");
 			db.exec(SCHEMA);
 			addRuleWords(db);
+			addParleyContext(db);
 		} catch (error) {
 			db.close();
 			throw error;
@@ -719,8 +722,15 @@ function addRuleWords(db: DatabaseSync): void {
 	if (!columns.some((column) => column.name === "words")) db.exec("ALTER TABLE rule ADD COLUMN words TEXT");
 }
 
+/** Adds the column `context` to the table `parley` of a store that was created before it. */
+function addParleyContext(db: DatabaseSync): void {
+	const columns = db.prepare("SELECT name FROM pragma_table_info('parley')").all();
+
+	if (!columns.some((column) => column.name === "context")) db.exec("ALTER TABLE parley ADD COLUMN context TEXT");
+}
+
 function parleyValues(parley: NewParley): SQLInputValue[] {
-	const { slug, title, goal, evidence, design_sense, status, at, by } = parley;
+	const { slug, title, goal, evidence, design_sense, status, at, by, context } = parley;
 
 	return [
 		slug,
@@ -731,6 +741,7 @@ function parleyValues(parley: NewParley): SQLInputValue[] {
 		status,
 		at,
 		by,
+		context ?? null,
 	];
 }
 

@@ -4,13 +4,14 @@
  */
 import {
 	type Ask,
-	askLine,
+	AskWrite as HarnessAskWrite,
 	Caller,
 	isFinished,
 	isReadBack,
 	LocalId,
-	Parley,
-	type ParleyAsks,
+	Parley as HarnessParley,
+	ParleyAsks as HarnessParleyAsks,
+	type ParleyFrame,
 	StoreId,
 	Text,
 	Time,
@@ -218,6 +219,39 @@ export type ThreadJoin = Static<typeof ThreadJoin>;
  * open ask of the parley of the round, which the question replaces. Harness accepts the extra key and does not check it.
  */
 export const RoundEntry = Type.Object({ ask: Type.Optional(LocalId) });
+
+/**
+ * What the projects entry reads of the frame of a round beyond the frame that harness checks: `context`, the Markdown
+ * text that the parley shows above its asks, which replaces the context of the parley. Harness accepts the extra key and
+ * does not check it.
+ */
+export const RoundContext = Type.Object({ context: Type.Optional(Text) });
+
+/** The frame of the parley of a round: the frame that harness checks, and its `context`. */
+export type RoundFrame = ParleyFrame & Static<typeof RoundContext>;
+
+const [OpenParley, ClosedParley] = HarnessParley.anyOf;
+
+/**
+ * A parley of the harness protocol with `context`, a Markdown text that its text shows above its asks, when a round set
+ * one.
+ */
+export const Parley = Type.Union([
+	Type.Object({ ...OpenParley.properties, ...RoundContext.properties }),
+	Type.Object({ ...ClosedParley.properties, ...RoundContext.properties }),
+]);
+
+export type Parley = Static<typeof Parley>;
+
+/** A parley with all of its asks, in the order of their numbers. */
+export const ParleyAsks = Type.Object({ ...HarnessParleyAsks.properties, parley: Parley });
+
+export type ParleyAsks = Static<typeof ParleyAsks>;
+
+/** The reply of a write of asks, whose parleys have their context. */
+export const AskWrite = Type.Object({ ...HarnessAskWrite.properties, parleys: Type.Array(ParleyAsks) });
+
+export type AskWrite = Static<typeof AskWrite>;
 
 /** The input of a mark of the message out `message` with `state`. */
 export const MessageMarkInput = Type.Object({ message: StoreId, state: MessageMark });
@@ -460,32 +494,63 @@ function parleyAnswerLine(parley: Parley, asks: readonly Ask[]): string {
 	return `[${parley.slug}] ${parts.join(" ")}`;
 }
 
-/** The lines of the options of `ask` while it is open, each `  <key> · <label>` with its gains and its costs. */
-function optionLines(ask: Ask): string[] {
-	if (ask.state !== "open") return [];
+/** The lines of the options of `ask`, each `- <key> · <label>` with its gains and its costs. */
+function optionLines(ask: Ask): string {
+	return (ask.options ?? [])
+		.map((option) => {
+			const gains = option.gains === undefined ? undefined : `gains: ${option.gains.join("; ")}`;
+			const costs = option.costs === undefined ? undefined : `costs: ${option.costs.join("; ")}`;
 
-	return (ask.options ?? []).map((option) => {
-		const gains = option.gains === undefined ? undefined : `gains: ${option.gains.join("; ")}`;
-		const costs = option.costs === undefined ? undefined : `costs: ${option.costs.join("; ")}`;
+			return `- ${fieldsText([option.key, option.label, gains, costs])}`;
+		})
+		.join("\n");
+}
 
-		return `  ${fieldsText([option.key, option.label, gains, costs])}`;
-	});
+/** The head of `ask` in the text of its parley: `<n>. <title>`, with a question mark when the title has none. */
+function askHead(ask: Ask): string {
+	return `${askNumber(ask)}. ${ask.title}${ask.title.endsWith("?") ? "" : "?"}`;
 }
 
 /**
- * The text of a parley: its line, the line of each of its asks with the options of each open ask and the words of the
- * user under each answered ask, and its answer line.
+ * The blocks of `ask` in the text of its parley. An open ask: its head with its plan and ` (my call)` for a my call,
+ * then its view, then its options. An answered ask: its head with its answer and its label, then each of the words of
+ * the user. A dropped ask: its head and `dropped`.
+ */
+function askBlocks(ask: Ask): string[] {
+	switch (ask.state) {
+		case "open": {
+			const plan = ask.plan === undefined ? "" : ` Plan ${ask.plan}`;
+			const call = ask.kind === "my call" ? " (my call)" : "";
+			const options = optionLines(ask);
+
+			return [
+				`${askHead(ask)}${plan}${call}`,
+				...(ask.view === undefined ? [] : [ask.view]),
+				...(options === "" ? [] : [options]),
+			];
+		}
+
+		case "answered":
+			return [`${askHead(ask)} ${fieldsText([ask.answer, answerLabel(ask)])}`, ...(ask.words ?? [])];
+
+		default:
+			return [`${askHead(ask)} dropped`];
+	}
+}
+
+/**
+ * The text of a parley, in blocks separated by blank lines: `# <title>`, its context when it has one, the blocks of each
+ * of its asks, and its answer line.
  */
 export function parleyText(reply: ParleyAsks): string {
-	const asks = reply.asks.flatMap((ask) => [
-		askLine(ask),
-		...optionLines(ask),
-		...(ask.state === "answered" ? (ask.words ?? []) : []),
-	]);
+	const { parley, asks } = reply;
 
-	return [parleyLine(reply.parley), ...asks, parleyAnswerLine(reply.parley, reply.asks)]
-		.map((line) => `${line}\n`)
-		.join("");
+	return `${[
+		`# ${parley.title}`,
+		...(parley.context === undefined ? [] : [parley.context]),
+		...asks.flatMap(askBlocks),
+		parleyAnswerLine(parley, asks),
+	].join("\n\n")}\n`;
 }
 
 /** The state line of `ask` in the text of `harness parley show`: its answer, its plan when it is open, or `Dropped`. */
@@ -507,13 +572,15 @@ function askStateText(ask: Ask): string {
 
 /**
  * The text of `harness parley show`, in Markdown: the title of the parley, with its status when it is done or dropped,
- * its goal, then each ask with options, with its state and the words of the user, then the design sense and the
+ * its goal and its context, then each ask with options, with its state and the words of the user, then the design sense and the
  * evidence when they are set. It leaves out the read-back, which is the ask with no options.
  */
 export function parleyShowText(reply: ParleyAsks): string {
 	const { parley } = reply;
 	const status = isFinished(parley.status) ? ` (${parley.status})` : "";
 	const blocks = [`# ${parley.title}${status}`, parley.goal];
+
+	if (parley.context !== undefined) blocks.push(parley.context);
 
 	for (const ask of reply.asks) {
 		if (isReadBack(ask)) continue;

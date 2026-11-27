@@ -1,6 +1,6 @@
 /** The requests that the projects entry serves on the host socket, and the value of the reply to each of them. */
 import type { JsonValue } from "@earendil-works/chord/json";
-import { LocalId, type Parley, type ParleyAsks, ParleyEnd, Slug } from "@vzlentin/harness/protocol";
+import { LocalId, ParleyEnd, Slug } from "@vzlentin/harness/protocol";
 import { type Static, type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import { type Edge, EdgeInput, ItemAdd, type ItemList, ItemSet, ItemState, type StagedItem } from "./item.ts";
@@ -13,6 +13,8 @@ import {
 	MessageEdit,
 	MessageLog,
 	MessageMarkInput,
+	type Parley,
+	type ParleyAsks,
 	type ParleyList,
 	type Person,
 	PersonAdd,

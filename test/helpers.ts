@@ -572,12 +572,15 @@ export const OPTIONS = [
 	{ key: "b", label: "In files" },
 ];
 
+/** The view of an ask with options. */
+export const VIEW = "The options side by side";
+
 /** A parley `slug` with one call, its design sense and a read-back: the IDs of its call and of its read-back. */
 export async function framed(slug: string): Promise<{ call: number; readBack: number }> {
 	const written = await round(
 		"pi-1",
 		{ slug, title: "Where asks live", goal: "Pick the place.", design_sense: "One writer." },
-		[{ title: "Where", kind: "your call", options: OPTIONS, plan: "a" }, { title: "These are the terms" }],
+		[{ title: "Where", kind: "your call", options: OPTIONS, plan: "a", view: VIEW }, { title: "These are the terms" }],
 	);
 
 	const [call, readBack] = (written.parleys[0]?.asks ?? []).map((ask) => ask.id);

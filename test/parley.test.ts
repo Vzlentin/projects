@@ -9,13 +9,12 @@ import {
 	AskWrite,
 	type EntryRequestLine,
 	Parley,
-	ParleyAsks,
 	type Request,
 } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { ItemList } from "../src/protocol/item.ts";
-import { ParleyList } from "../src/protocol/project.ts";
+import { ParleyAsks, ParleyList } from "../src/protocol/project.ts";
 import type { ProjectRequest } from "../src/protocol/requests.ts";
 import {
 	answer,
@@ -31,6 +30,7 @@ import {
 	unlinkContract,
 	untilContract,
 	untilState,
+	VIEW,
 } from "./helpers.ts";
 
 let host: Host | undefined;
@@ -85,7 +85,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			"pi-1",
 			{ slug: "store-place", title: "Where asks live", goal: "Pick the place.", evidence: ["The skill today"] },
 			[
-				{ title: "Where", kind: "your call", tension: "One writer or many", options: OPTIONS, plan: "a" },
+				{ title: "Where", kind: "your call", tension: "One writer or many", options: OPTIONS, plan: "a", view: VIEW },
 				{ title: "Which view", view: "A `table` with **bold**" },
 			],
 		);
@@ -285,7 +285,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			action: "round",
 			caller: "pi-1",
 			parley: { slug: "known-fields", title: "Known fields", goal: "Keep the shape." },
-			asks: [{ title: "Which", options: [{ key: "a", label: "A", gains: ["G"], extra: "x" }] }],
+			asks: [{ title: "Which", options: [{ key: "a", label: "A", gains: ["G"], extra: "x" }], view: VIEW }],
 		};
 
 		const written = await sendRaw(JSON.stringify(roundLine));
@@ -347,7 +347,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 
 	it("ends an open parley as dropped: it drops its open asks, and stops its workers", async () => {
 		const written = await round("pi-1", { slug: "dropped-open", title: "Where asks live", goal: "Pick the place." }, [
-			{ title: "Where", kind: "your call", options: OPTIONS, plan: "a" },
+			{ title: "Where", kind: "your call", options: OPTIONS, plan: "a", view: VIEW },
 			{ title: "Who reads" },
 			{ title: "Which writer" },
 		]);
@@ -402,7 +402,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			caller: "pi-2",
 			parley: { slug: "replaced" },
 			asks: [
-				{ ask: 1, title: "Where now", kind: "my call", options: [OPTIONS[1]], plan: "b" },
+				{ ask: 1, title: "Where now", kind: "my call", options: [OPTIONS[1]], plan: "b", view: "New" },
 				{ title: "Who reads" },
 				{ ask: 3, title: "Which writer" },
 			],
@@ -424,6 +424,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			kind: "my call",
 			options: [OPTIONS[1]],
 			plan: "b",
+			view: "New",
 			parley: first?.parley,
 			note: "where-note",
 			state: "open",
@@ -458,9 +459,28 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 		expect(await readParley("reframed")).toEqual(written.parleys[0]);
 	});
 
+	it("keeps the context of a parley, which a round replaces, also with no asks", async () => {
+		const frame = { slug: "in-context", title: "In context", goal: "Show it.", context: "Before" };
+		await round("pi-1", frame, [{ title: "Who reads" }]);
+		const before = await readParley("in-context");
+		expect(before.parley.context).toBe("Before");
+
+		const context = "```mermaid\ngraph LR\n  a --> b\n```";
+		const reframe = { slug: "in-context", context };
+		await round("pi-2", reframe, []);
+		const after = await readParley("in-context");
+
+		expect(after).toEqual({ ...before, parley: { ...before.parley, context, at: expect.any(Number), by: "pi-2" } });
+		await expect(round("pi-2", reframe, [])).rejects.toThrow(
+			"A round with no asks must change the title, goal, context, evidence or design sense of the open parley in-context",
+		);
+		await round("pi-2", { slug: "in-context", goal: "Show it again." }, [{ title: "Who writes" }]);
+		expect((await readParley("in-context")).parley.context).toBe(context);
+	});
+
 	it("refuses a write that breaks a check with a clear error, and changes nothing", async () => {
 		const { call, readBack } = await framed("checked");
-		const lone = (await round("khan", undefined, [{ title: "Merge?", options: OPTIONS }])).asks[0]?.id ?? 0;
+		const lone = (await round("khan", undefined, [{ title: "Merge?", options: OPTIONS, view: VIEW }])).asks[0]?.id ?? 0;
 		const plain = (await round("khan", undefined, [{ title: "Why?" }])).asks[0]?.id ?? 0;
 		const dropped = Value.Parse(AskWrite, await send({ type: "ask", action: "drop", caller: "khan", id: plain }));
 		expect(dropped).toMatchObject({ parleys: [], asks: [{ id: plain, state: "dropped", by: "khan" }] });
@@ -473,7 +493,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 		]);
 		await untilContract("signed");
 		await round("pi-1", { slug: "fixed", title: "T", goal: "G." }, [
-			{ title: "A", options: OPTIONS },
+			{ title: "A", options: OPTIONS, view: VIEW },
 			{ title: "B" },
 			{ title: "C" },
 		]);
@@ -481,6 +501,8 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 		await send({ type: "ask", action: "drop", caller: "pi-1", slug: "fixed", n: 2 });
 
 		const before = { ...(await stored()), asks: await everyAsk() };
+		const viewless = { ask: 1, title: "Where now", options: OPTIONS };
+		const blank = { slug: "checked", context: " " };
 
 		const refused: [AskOrParley, string][] = [
 			[
@@ -585,7 +607,25 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 					parley: { slug: "checked", title: "Where asks live", design_sense: "One writer." },
 					asks: [],
 				},
-				"A round with no asks must change the title, goal, evidence or design sense of the open parley checked",
+				"A round with no asks must change the title, goal, context, evidence or design sense of the open parley checked",
+			],
+			[
+				{ type: "ask", action: "round", caller: "khan", asks: [{ title: "T" }, { title: "U", options: OPTIONS }] },
+				"Invalid ask request: asks/1/view: required",
+			],
+			[
+				{
+					type: "ask",
+					action: "round",
+					caller: "pi-1",
+					parley: { slug: "checked" },
+					asks: [viewless],
+				},
+				"Invalid ask request: asks/0/view: required",
+			],
+			[
+				{ type: "ask", action: "round", caller: "pi-1", parley: blank, asks: [] },
+				"Invalid round: context must be a text with a character that is not white space",
 			],
 			[
 				{
@@ -599,7 +639,7 @@ describe("asks and parleys", { timeout: 30_000 }, () => {
 			],
 			[
 				{ type: "ask", action: "round", caller: "pi-1", parley: { slug: "checked" }, item: 1, asks: [] },
-				"A round with no asks must change the title, goal, evidence or design sense of the open parley checked",
+				"A round with no asks must change the title, goal, context, evidence or design sense of the open parley checked",
 			],
 		];
 

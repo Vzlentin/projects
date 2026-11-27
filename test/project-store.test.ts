@@ -99,6 +99,33 @@ describe("project store", () => {
 		}
 	});
 
+	it("opens a store whose parleys have no context column, keeps its parleys, and stores the context of a parley", async () => {
+		const dir = await mkdtemp(join(root, "parley-context-"));
+		const db = new DatabaseSync(join(dir, PROJECT_STORE_FILE));
+		db.exec(`CREATE TABLE parley (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, title TEXT NOT NULL, goal TEXT NOT NULL,
+			evidence TEXT, design_sense TEXT, status TEXT NOT NULL, at INTEGER NOT NULL, "by" TEXT NOT NULL
+		)`);
+		db.exec(
+			`INSERT INTO parley (slug, title, goal, status, at, "by") VALUES ('old', 'Old', 'Keep it.', 'open', 1, 'a')`,
+		);
+		db.close();
+		const old = ProjectStore.open(dir, 0);
+
+		try {
+			const parley = { slug: "new", title: "New", goal: "Show it.", status: "open", at: 2, by: "a" } as const;
+			const added = old.write((tx) => tx.addParley({ ...parley, context: "A `fence`" }));
+
+			expect(old.parleys()).toEqual([
+				{ id: 1, slug: "old", title: "Old", goal: "Keep it.", status: "open", at: 1, by: "a" },
+				{ ...parley, id: 2, context: "A `fence`" },
+			]);
+			expect(added.context).toBe("A `fence`");
+		} finally {
+			old.close();
+		}
+	});
+
 	it("rolls a failed write back and tells no listener", () => {
 		expect(() =>
 			store.write((tx) => {

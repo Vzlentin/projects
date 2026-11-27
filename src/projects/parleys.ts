@@ -11,8 +11,6 @@ import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context"
 import type { ConversationId, DocumentReader, Harness, Tx } from "@earendil-works/pi-durable";
 import type { AnsweredAskHandler, EntryAsks } from "@vzlentin/harness/entry-api";
 import {
-	type AskWrite,
-	type ParleyAsks,
 	type AnswerGroup,
 	askGroup,
 	type AnswerAuthor,
@@ -23,12 +21,18 @@ import {
 	type AskRound,
 	isReadBack,
 	knownAsk,
-	type Parley,
 	type ParleyEnd,
-	type ParleyFrame,
 } from "@vzlentin/harness/protocol";
 import { Value } from "typebox/value";
-import { parleyText, RoundEntry } from "../protocol/project.ts";
+import {
+	type AskWrite,
+	type Parley,
+	type ParleyAsks,
+	parleyText,
+	RoundContext,
+	RoundEntry,
+	type RoundFrame,
+} from "../protocol/project.ts";
 import { contractItems, endContract, itemForContract, writeEdge } from "./items.ts";
 import type { ProjectStore, StoreReader, StoreTx } from "./project-store.ts";
 
@@ -70,8 +74,7 @@ async function roundIn(
 ): Promise<AskWrite> {
 	const current = await asks.inCommit(tx);
 	const at = Date.now();
-	const frame = round.parley;
-	const { replaced, added } = splitRound(store, current, round);
+	const { frame, replaced, added } = splitRound(store, current, round);
 
 	for (const { ask, input } of replaced) await asks.replace(tx, ask.id, input, by, at);
 
@@ -411,25 +414,25 @@ function parleyIds(asks: readonly Ask[]): number[] {
 	return asks.flatMap((ask) => (ask.parley === undefined ? [] : [ask.parley.id]));
 }
 
-/** The fields of a parley that a frame sets: its title, goal, evidence and design sense. */
+/** The fields of a parley that a frame sets: its title, goal, context, evidence and design sense. */
 function framedFields(parley: Omit<OpenParley, "id">): readonly unknown[] {
-	return [parley.title, parley.goal, parley.evidence, parley.design_sense];
+	return [parley.title, parley.goal, parley.context, parley.evidence, parley.design_sense];
 }
 
 /**
  * Writes the open parley of the frame `frame` in `tx`, at `at` by the caller `by`, and gives it: a new parley with the
  * next ID for a new slug, or the known parley with the fields of the frame. With `reframe`, the round has no asks: a
- * new slug makes the parley, and a known slug must name an open parley and change its title, goal, evidence or design
- * sense.
+ * new slug makes the parley, and a known slug must name an open parley and change its title, goal, context, evidence or
+ * design sense.
  */
 function frameParley(
 	tx: StoreTx,
-	frame: ParleyFrame,
+	frame: RoundFrame,
 	{ at, by, reframe }: { readonly at: number; readonly by: string; readonly reframe: boolean },
 ): OpenParley {
 	const { slug } = frame;
 	const existing = tx.findParleyBySlug(slug);
-	const unchanged = `A round with no asks must change the title, goal, evidence or design sense of the open parley ${slug}`;
+	const unchanged = `A round with no asks must change the title, goal, context, evidence or design sense of the open parley ${slug}`;
 
 	if (reframe && existing !== undefined && existing.status !== "open") throw new Error(unchanged);
 	const found = existing === undefined ? undefined : openParley(existing);
@@ -440,8 +443,11 @@ function frameParley(
 
 	if (goal === undefined) throw new Error(`Parley ${slug} is new: goal is required`);
 	const parley: Omit<OpenParley, "id"> = { slug, title, goal, status: "open", at, by };
+	const parleyContext = frame.context ?? found?.context;
 	const evidence = frame.evidence ?? found?.evidence;
 	const designSense = frame.design_sense ?? found?.design_sense;
+
+	if (parleyContext !== undefined) parley.context = parleyContext;
 
 	if (evidence !== undefined) parley.evidence = [...evidence];
 
@@ -468,15 +474,23 @@ function openParley(parley: Parley): OpenParley {
 type Replace = { readonly ask: Ask; readonly input: AskInput };
 
 /**
- * The entries of the round `round`, split: the open asks of `asks` that an entry with `ask`, a number in the parley of
- * the round, replaces, and the new asks. It checks each replace before the round writes anything: the round has a
- * parley, which is open, and the ask is there, open, and replaced once.
+ * The frame of the round `round` and its entries, split: the open asks of `asks` that an entry with `ask`, a number in
+ * the parley of the round, replaces, and the new asks. It checks the round before the round writes anything: the
+ * context of the frame is a text, each entry with options has a view, and each replace has a parley, which is open, and
+ * an ask there, open, and replaced once.
  */
 function splitRound(parleys: Pick<StoreReader, "parleyBySlug">, asks: readonly Ask[], round: AskRound) {
+	const frame: RoundFrame | undefined =
+		round.parley === undefined || Value.Check(RoundContext, round.parley) ? round.parley : invalidContext();
+
 	const replaced: Replace[] = [];
 	const added: AskInput[] = [];
 
-	for (const input of round.asks) {
+	for (const [index, input] of round.asks.entries()) {
+		if (input.options !== undefined && input.view === undefined) {
+			throw new Error(`Invalid ask request: asks/${index}/view: required`);
+		}
+
 		const { ask: n } = Value.Check(RoundEntry, input) ? input : invalidEntry();
 
 		if (n === undefined) {
@@ -495,7 +509,12 @@ function splitRound(parleys: Pick<StoreReader, "parleyBySlug">, asks: readonly A
 		replaced.push({ ask, input });
 	}
 
-	return { replaced, added };
+	return { frame, replaced, added };
+}
+
+/** Fails on the frame of a round whose `context` is not a text. */
+function invalidContext(): never {
+	throw new Error("Invalid round: context must be a text with a character that is not white space");
 }
 
 /** Fails on an entry of a round whose `ask` is not the number of an ask. */
